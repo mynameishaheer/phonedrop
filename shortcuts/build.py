@@ -422,9 +422,11 @@ def build_send():
     """§3: share sheet (images, media, files); with no input, pick photos."""
     s = Shortcut("Send to PC", color=BLUE, share_sheet=True,
                  input_classes=MEDIA_INPUT_CLASSES)
-    s.if_(shortcut_input(), HAS_VALUE)
+    # Apple's signing server rejects an If directly on Shortcut Input, so count it instead.
     s.set("Items", shortcut_input())
-    s.otherwise()
+    s.set("InputCount", s.act("count", {"Input": attach(shortcut_input()), "WFCountType": "Items"},
+                              "Count"))
+    s.if_(var("InputCount"), IS, number="0")
     picked = s.act("selectphoto", {"WFSelectMultiplePhotos": True}, "Photos")
     s.set("Items", picked)
     s.end()
@@ -483,21 +485,27 @@ def build_receive():
     item = var(REPEAT_ITEM)
     s.set("Kind", s.get_value(item, "kind"))
 
+    # Apple's signing server rejects key lookups on Repeat Item and Open URLs fed plain text,
+    # so read keys with Get Dictionary Value and turn links into a URL first.
+    s.set("ItemText", s.get_value(item, "text"))
+    s.set("ItemPath", s.get_value(item, "path"))
+
     s.if_(var("Kind"), IS, "text")
-    s.act("setclipboard", {"WFInput": attach(var(REPEAT_ITEM, "text"))})
+    s.act("setclipboard", {"WFInput": attach(var("ItemText"))})
     s.end()
 
     s.if_(var("Kind"), IS, "url")
-    s.if_(var(REPEAT_ITEM, "text"), BEGINS_WITH, "http")
-    s.act("openurl", {"WFInput": attach(var(REPEAT_ITEM, "text"))})
+    s.if_(var("ItemText"), BEGINS_WITH, "http")
+    link = s.act("url", {"WFURLActionURL": tok(var("ItemText"))}, "URL")
+    s.act("openurl", {"WFInput": attach(link)})
     s.otherwise()
-    s.act("setclipboard", {"WFInput": attach(var(REPEAT_ITEM, "text"))})
+    s.act("setclipboard", {"WFInput": attach(var("ItemText"))})
     s.end()
     s.end()
 
     for kind in ("image", "video", "file"):
         s.if_(var("Kind"), IS, kind)
-        s.sign("FileReq", "GET", var(REPEAT_ITEM, "path"), "-")
+        s.sign("FileReq", "GET", var("ItemPath"), "-")
         s.set("Download", s.request("FileReq", "GET"))
         if kind == "file":
             s.act("documentpicker.save", {"WFInput": attach(var("Download")),
@@ -524,7 +532,7 @@ KNOWN_ACTIONS = {
     "getdevicedetails", "getitemname", "getlastscreenshot", "gettext", "getvalueforkey",
     "hash", "notification", "number.random", "openurl", "output", "repeat.each",
     "runworkflow", "savetocameraroll", "scanbarcode", "selectphoto", "setclipboard",
-    "setitemname", "setvariable", "text.changecase", "urlencode",
+    "setitemname", "setvariable", "text.changecase", "urlencode", "url",
 }
 CONTROL_FLOW = {"conditional", "repeat.each"}
 REF_TYPES = {"Variable", "ActionOutput", "ExtensionInput", "CurrentDate"}

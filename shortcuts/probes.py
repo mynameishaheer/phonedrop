@@ -20,22 +20,32 @@ def probe(name, fn, **kw):
     return s
 
 
+def _p2a(s):
+    s.set("N", s.act("count", {"Input": b.attach(b.shortcut_input()), "WFCountType": "Items"}, "Count"))
+    s.if_(b.var("N"), b.IS, number="0")
+    s.alert("x")
+    s.end()
+
+
+def _p5a(s):
+    u = s.act("url", {"WFURLActionURL": b.tok(b.var("T"))}, "URL")
+    s.act("openurl", {"WFInput": b.attach(u)})
+
+
+def _p8a(s):
+    d = s.dictionary([("items", "x")])
+    s.repeat_each(s.get_value(d, "items"))
+    s.set("V", s.get_value(b.var(b.REPEAT_ITEM), "text"))
+    s.act("setclipboard", {"WFInput": b.attach(b.var("V"))})
+    s.end()
+
+
+# Round 2: the alternatives used by the rewritten Send to PC and Receive from PC.
 PROBES = [
-    probe("1 select photos", lambda s: s.act("selectphoto", {"WFSelectMultiplePhotos": True}, "Photos")),
-    probe("2 if shortcut input", lambda s: (s.if_(b.shortcut_input(), b.HAS_VALUE), s.alert("x"), s.end()),
-          share_sheet=True, input_classes=["WFImageContentItem", "WFGenericFileContentItem"]),
-    probe("3 count and number if", lambda s: (
-        s.set("C", s.act("count", {"Input": b.attach(b.var("T")), "WFCountType": "Items"}, "Count")),
-        s.if_(b.var("C"), b.IS, number="0"), s.alert("x"), s.end())),
-    probe("4 copy to clipboard", lambda s: s.act("setclipboard", {"WFInput": b.attach(b.var("T"))})),
-    probe("5 open urls", lambda s: s.act("openurl", {"WFInput": b.attach(b.var("T"))})),
-    probe("6 save to photos", lambda s: s.act("savetocameraroll", {"WFInput": b.attach(b.var("T")),
-                                                                    "WFCameraRollSelectedGroup": "Recents"})),
-    probe("7 save file ask", lambda s: s.act("documentpicker.save", {"WFInput": b.attach(b.var("T")),
-                                                                      "WFAskWhereToSave": True}, "Saved File")),
-    probe("8 dictionary key of repeat item", lambda s: (
-        s.repeat_each(b.var("T")), s.act("setclipboard", {"WFInput": b.attach(b.var(b.REPEAT_ITEM, "text"))}),
-        s.end())),
+    probe("2a count shortcut input", _p2a, share_sheet=True,
+          input_classes=["WFImageContentItem", "WFGenericFileContentItem"]),
+    probe("5a url then open urls", _p5a),
+    probe("8a get value of repeat item", _p8a),
 ]
 
 if __name__ == "__main__":

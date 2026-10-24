@@ -2,3 +2,4 @@
 *.exe.new
 /preview/
 /phonedrop
+__pycache__/

@@ -11,7 +11,10 @@ All values below are case-sensitive unless noted. "hex" means lowercase hexadeci
 ## 1. Transport
 
 - The laptop listens on TCP port `47474` (configurable) on its IPv4 addresses on networks Windows
-  classifies as **Private** or **Domain**. Nothing listens on Public networks.
+  classifies as **Private** or **Domain**. Public networks are skipped unless the user
+  chose **Use here** on that network in the panel. That choice is remembered by the network's
+  Windows id (not its name), and PhoneDrop adds a Public-profile firewall rule for itself once,
+  with the user's UAC consent.
 - Peers outside private ranges (RFC 1918, link-local, loopback, IPv6 ULA) are dropped at accept,
   as are connections beyond 32 open per peer IP or 256 in all.
 - The phone addresses the laptop as `http://<hostname>.local:47474` (mDNS). The QR code also

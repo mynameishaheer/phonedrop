@@ -40,8 +40,9 @@ would need an App Store app), so you collect PC → phone items by running a sho
    allow **Private networks** only.
 3. Windows SmartScreen may warn about an unsigned app: **More info → Run anyway**.
 4. Click the tray icon (a phone with an arrow; it may be under **^**). It should say
-   **Ready to receive**. If it says **Paused on this network**, Windows has your home Wi-Fi set
-   to *Public*: click the card and switch the network profile to **Private**.
+   **Ready to receive**. If it says **Paused on this network**, Windows calls your Wi-Fi *Public*
+   (the default for new networks): click **Use here**. Windows asks once for permission to let
+   PhoneDrop through its firewall.
 
 **iPhone**
 

@@ -50,6 +50,7 @@ func outerSig(secret, inner string) []byte {
 type authResult struct {
 	id   string
 	body string
+	why  string // on failure: which check failed, for the log only (never sent to the client)
 }
 
 // verifier checks signed headers and remembers nonces. Only requests with a valid signature
@@ -78,18 +79,34 @@ func (v *verifier) verify(r *http.Request, secretFor func(id string) (string, bo
 	nonce, ok3 := header(r, "X-PD-Nonce", 128)
 	body, ok4 := header(r, "X-PD-Body", 64)
 	sigHex, ok5 := header(r, "X-PD-Sig", 64)
-	if !(ok1 && ok2 && ok3 && ok4 && ok5) || !isHex(id) || !validNonce(nonce) ||
-		!(body == "-" || len(body) == 64 && isHex(body)) {
-		return authResult{}, false
+	fail := func(why string) (authResult, bool) { return authResult{why: why}, false }
+	for _, h := range []struct {
+		name string
+		ok   bool
+	}{{"X-PD-Phone", ok1}, {"X-PD-Time", ok2}, {"X-PD-Nonce", ok3}, {"X-PD-Body", ok4}, {"X-PD-Sig", ok5}} {
+		if !h.ok {
+			return fail("missing or too long header " + h.name)
+		}
+	}
+	switch {
+	case !isHex(id):
+		return fail("X-PD-Phone isn't hex")
+	case !validNonce(nonce):
+		return fail("X-PD-Nonce has bad characters or length")
+	case !(body == "-" || len(body) == 64 && isHex(body)):
+		return fail("X-PD-Body isn't - or a SHA-256")
 	}
 	sig, err := hex.DecodeString(sigHex)
 	if err != nil || len(sig) != sha256.Size {
-		return authResult{}, false
+		return fail("X-PD-Sig isn't a SHA-256")
 	}
 	now := v.now()
 	t, ok := parseTime(ts)
-	if !ok || t.Sub(now).Abs() > maxSkew {
-		return authResult{}, false
+	if !ok {
+		return fail("X-PD-Time unreadable")
+	}
+	if d := t.Sub(now); d.Abs() > maxSkew {
+		return fail("phone clock off by " + d.Round(time.Second).String())
 	}
 	secret, known := secretFor(id)
 	if !known {
@@ -100,8 +117,13 @@ func (v *verifier) verify(r *http.Request, secretFor func(id string) (string, bo
 	lower := hex.EncodeToString(in[:])
 	m := subtle.ConstantTimeCompare(sig, outerSig(secret, lower)) |
 		subtle.ConstantTimeCompare(sig, outerSig(secret, strings.ToUpper(lower)))
-	if m != 1 || !known || !v.useNonce(id, nonce, now) {
-		return authResult{}, false
+	switch {
+	case !known:
+		return fail("unknown phone id (not paired, or the pairing code expired or was used)")
+	case m != 1:
+		return fail("signature mismatch")
+	case !v.useNonce(id, nonce, now):
+		return fail("nonce reused")
 	}
 	return authResult{id: id, body: strings.ToLower(body)}, true
 }

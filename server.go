@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/netip"
@@ -160,6 +161,7 @@ func (s *server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	a, ok := s.auth.verify(r, s.phones.secretFor)
 	if !ok {
+		log.Printf("auth: %s %s from %s refused: %s", r.Method, r.URL.Path, peerIP(r.RemoteAddr), a.why)
 		s.unauthorized(w, r)
 		return
 	}

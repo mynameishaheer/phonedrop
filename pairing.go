@@ -174,6 +174,11 @@ func (s *server) handlePair(w http.ResponseWriter, r *http.Request) {
 		return "", false
 	})
 	if !ok {
+		why := a.why
+		if p == nil {
+			why = "no pairing code is open (click Pair on the PC first; codes last 2 minutes and work once)"
+		}
+		log.Printf("pair: from %s refused: %s", peerIP(r.RemoteAddr), why)
 		s.unauthorized(w, r)
 		return
 	}

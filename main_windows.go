@@ -56,6 +56,7 @@ func main() {
 	srv.setOutbox(out)
 	u.out = out
 	u.hist = loadHistory("")
+	setTrusted(u.set.Trusted)
 	go watchNetworks(func(st netState) {
 		for _, n := range st.networks {
 			log.Printf("network %q category=%d addrs=%v", n.name, n.category, n.addrs)

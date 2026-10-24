@@ -44,6 +44,7 @@ func previewMore(dir string) {
 		render("full", u)
 		u = base("settings")
 		u.set.Encrypt = true
+		u.set.Trusted = []trustedNet{{ID: "{X}", Name: "Shaheer Home 5G"}}
 		render("settings-encrypt", u)
 		u = base("pair")
 		u.qr, u.pairExpires = qr, now.Add(102*time.Second)

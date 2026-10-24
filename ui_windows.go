@@ -82,6 +82,7 @@ type ui struct {
 	recent         []historyEntry // shown in the panel
 	onSettings     func(settings) // tells the server about a changed save folder etc.
 	out            sender
+	trustCand      *network // the Public network the status card offers "Use here" for
 	onEncrypt      func(on bool) error
 	startFiles     []string // files passed on the command line (Send to), queued once the UI is up
 	hotkeyErr      bool     // Ctrl+Alt+P is taken by another app
@@ -156,14 +157,16 @@ type status struct {
 	icon        [2]rune
 	title, sub  string
 	ready, warn bool
-	settings    bool // clicking opens Windows' network settings
+	settings    bool     // clicking opens Windows' network settings
+	trust       *network // a Public network the card offers "Use here" for
+	firewall    bool     // trusted, but the firewall rule is still missing: offer "Allow"
 }
 
 func (u *ui) statusOf(s snap) status {
 	privateNames := func() []string {
 		var out []string
 		for _, n := range s.net.networks {
-			if n.category != catPublic && len(n.addrs) > 0 {
+			if (n.category != catPublic || n.trusted) && len(n.addrs) > 0 {
 				out = append(out, n.name)
 			}
 		}
@@ -175,6 +178,12 @@ func (u *ui) statusOf(s snap) status {
 	case s.listenErr != "" && len(s.listening) == 0:
 		return status{icon: icWarning, title: "Can't receive", sub: u.listenErrText(s.listenErr), warn: true}
 	case len(s.listening) > 0:
+		for _, n := range s.net.networks {
+			if n.trusted && !u.set.PublicFirewall {
+				return status{icon: icShieldError, title: "Firewall permission needed",
+					sub: "Windows blocks “" + n.name + "” until you allow it", warn: true, firewall: true}
+			}
+		}
 		names := privateNames()
 		where := "this network"
 		if len(names) > 0 {
@@ -189,8 +198,9 @@ func (u *ui) statusOf(s snap) status {
 	}
 	for _, n := range s.net.networks {
 		if n.category == catPublic && len(n.addrs) > 0 {
+			n := n
 			return status{icon: icWifiWarning, title: "Paused on this network",
-				sub: "“" + n.name + "” is a Public network", warn: true, settings: true}
+				sub: "“" + n.name + "” is Public", warn: true, trust: &n}
 		}
 	}
 	return status{icon: icWifiOff, title: "Not connected", sub: "Join your home Wi-Fi to receive", settings: true}
@@ -218,7 +228,7 @@ func (u *ui) mainHeight() float32 {
 }
 
 func (u *ui) settingsHeight() float32 {
-	return 48 + labelH + 64 + 48 + labelH + 3*48 + 12 + 20 + pad
+	return 48 + labelH + 64 + 48 + labelH + 3*48 + u.trustedHeight() + 12 + 20 + pad
 }
 
 func (u *ui) height() float32 {
@@ -318,7 +328,17 @@ func (u *ui) drawMain(c *canvas, p rectF, s snap) {
 	c.circle(r.X+34, r.Y+statusH/2, 20, chip)
 	c.icon(st.icon, st.ready, fontIcon, 20, rectF{r.X + 14, r.Y + statusH/2 - 20, 40, 40}, fg)
 	right := r.W - 76
-	if id != "" {
+	switch {
+	case st.trust != nil || st.firewall:
+		label, bid := "Use here", "btn:trust"
+		if st.firewall {
+			label, bid = "Allow", "btn:firewall"
+		}
+		bw := c.measure(label, fontText) + 28
+		right -= bw + 4
+		u.trustCand = st.trust
+		u.accentButton(c, rectF{r.X + r.W - 14 - bw, r.Y + (statusH-32)/2, bw, 32}, label, bid)
+	case id != "":
 		right -= 28
 		c.icon(icOpen, false, fontIconSm, 16, rectF{r.X + r.W - 40, r.Y, 28, statusH}, t.text2)
 		u.addHit(r, id)
@@ -463,7 +483,7 @@ func (u *ui) drawSettings(c *canvas, p rectF) {
 	u.switchRow(c, rectF{x, y + 48, w, 48}, "Encrypt transfers (beta)", "sw:encrypt", u.set.Encrypt)
 	c.fill(rectF{x + 1, y + 96, w - 2, 1}, 0, t.divider)
 	u.switchRow(c, rectF{x, y + 96, w, 48}, "Start when I sign in", "sw:login", u.startAtLogin)
-	y += 3*48 + 12
+	y = u.drawTrusted(c, x, y+3*48, w) + 12
 
 	hint := "Listens on port " + strconv.Itoa(u.set.Port) + ", on Private networks only"
 	if u.set.Encrypt {
@@ -670,6 +690,20 @@ func (u *ui) click(id string) {
 	case "btn:pair":
 		u.beginPairing()
 		return
+	case "btn:trust":
+		if u.trustCand != nil {
+			u.trustNetwork(*u.trustCand)
+		}
+		return
+	case "btn:firewall":
+		u.set.PublicFirewall = false
+		for _, n := range u.snapshot().net.networks {
+			if n.trusted {
+				u.trustNetwork(n)
+				break
+			}
+		}
+		return
 	case "btn:sendfiles":
 		u.hide()
 		if files := pickFiles(); len(files) > 0 {
@@ -715,6 +749,10 @@ func (u *ui) click(id string) {
 			u.startAtLogin = !u.startAtLogin
 		}
 	default:
+		if strings.HasPrefix(id, "untrust:") {
+			u.untrust(id[len("untrust:"):])
+			return
+		}
 		if strings.HasPrefix(id, "rm:") {
 			u.remove(id[3:])
 			return
@@ -923,6 +961,9 @@ func uiProc(hwnd, m, wParam, lParam uintptr) uintptr {
 		return 0
 	case wmConfirm:
 		u.askConfirm()
+		return 0
+	case wmFirewall:
+		u.firewallDone(wParam == 1)
 		return 0
 	case wmReceived:
 		u.drainInbox()

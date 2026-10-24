@@ -20,6 +20,14 @@ type settings struct {
 	Hotkey   bool   `json:"hotkey"`    // Ctrl+Alt+P sends the clipboard to the phone
 	Encrypt  bool   `json:"encrypt"`   // TLS mode (beta, PROTOCOL.md §7)
 	Port     int    `json:"port"`
+	// Trusted: Public networks the user chose "Use here" on (Windows network ids).
+	Trusted        []trustedNet `json:"trusted,omitempty"`
+	PublicFirewall bool         `json:"public_firewall,omitempty"` // the Public-profile firewall rule was added
+}
+
+type trustedNet struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 func dataDir() string {

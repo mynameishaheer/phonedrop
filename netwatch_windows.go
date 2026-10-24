@@ -27,6 +27,7 @@ type network struct {
 	id       guid // INetwork::GetNetworkId: two networks can share a display name
 	name     string
 	category int
+	trusted  bool // Public, but the user chose "Use here" on it
 	addrs    []netip.Addr
 }
 
@@ -157,8 +158,9 @@ func readNetworks() netState {
 	var st netState
 	for _, id := range order {
 		n := byID[id]
+		n.trusted = n.category == catPublic && isTrusted(n.id)
 		st.networks = append(st.networks, *n)
-		if n.category == catPublic {
+		if n.category == catPublic && !n.trusted {
 			continue
 		}
 		for _, a := range n.addrs {
@@ -279,7 +281,7 @@ func sameNet(a, b netState) bool {
 	}
 	for i := range a.networks {
 		if a.networks[i].id != b.networks[i].id || a.networks[i].name != b.networks[i].name ||
-			a.networks[i].category != b.networks[i].category {
+			a.networks[i].category != b.networks[i].category || a.networks[i].trusted != b.networks[i].trusted {
 			return false
 		}
 	}

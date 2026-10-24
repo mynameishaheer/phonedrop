@@ -21,7 +21,7 @@ Get-Process phonedrop -ErrorAction SilentlyContinue | Stop-Process -Force -PassT
 if ($Uninstall) {
     Remove-ItemProperty -Path $run -Name $name -ErrorAction SilentlyContinue
     Remove-Item $lnk, $sendTo -ErrorAction SilentlyContinue
-    if ($admin) { Remove-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue }
+    if ($admin) { Remove-NetFirewallRule -DisplayName $name, "$name (trusted Public networks)" -ErrorAction SilentlyContinue }
     Remove-Item $exe -ErrorAction SilentlyContinue
     Write-Host "Removed PhoneDrop. Settings and paired phones are still in $dir; delete that folder to forget them."
     return

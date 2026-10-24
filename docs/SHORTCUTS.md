@@ -73,7 +73,7 @@ the URL and headers for one request. The other shortcuts call it with a *Diction
 In the shortcut's settings (ⓘ), make sure **Show in Share Sheet** is off.
 
 **Every request below** uses `Get Contents of URL` with URL *Req.url*, the method given, and these
-five **Headers**, where *Req* is what *PhoneDrop Sign* returned:
+five **Headers**, where *Req* is what *PhoneDrop Sign* returned (insert *Req*, tap it, pick the key):
 
 | Header | Value |
 |---|---|
@@ -102,7 +102,7 @@ Create **PhoneDrop Setup**.
    4. `Dictionary`: `method` = `POST`, `path` = `/v1/pair`, `body` = *BodyHash*, `plain` = `1`.
    5. `Run Shortcut` **PhoneDrop Sign** with the *Dictionary* (**Show While Running** off).
       Then `Set Variable` **Req** to it.
-   6. `Get Contents of URL`: **POST**, the five headers, **Request Body** **File** = *Name*.
+   6. `Get Contents of URL`: URL *Req.url*, **POST**, the five headers from *Req*, **Request Body** **File** = *Name*.
       Then `Set Variable` **Result** to it.
    7. `Text`: *Result* (just the variable). Then `If` that *Text* **contains** `true`: `Show Alert` "Paired! You're ready to send."
       **Otherwise**: `Show Alert` "Pairing didn't work: *Result*", then `Stop This Shortcut`.
@@ -142,7 +142,7 @@ set **Receive** to *Images, Media, Files* and **If there's no input** to **Ask F
    2. `Generate Hash` **SHA256** of *Repeat Item*. Then `Set Variable` **BodyHash** to it.
    3. `Dictionary`: `method` = `POST`, `path` = `/v1/items`, `body` = *BodyHash*.
       `Run Shortcut` **PhoneDrop Sign** with it. Then `Set Variable` **Req** to it.
-   4. `Get Contents of URL`: **POST**, the five headers plus `X-PD-Name` = *EncodedName*,
+   4. `Get Contents of URL`: URL *Req.url*, **POST**, the five headers from *Req* plus `X-PD-Name` = *EncodedName*,
       **Request Body** **File** = *Repeat Item*. Then `Set Variable` **Result** to it.
    5. `Text`: *Result*. Then `If` that *Text* **does not contain** `true`: `Show Alert` "PhoneDrop: *Result*",
       `Stop This Shortcut`. **End If**.
@@ -165,7 +165,7 @@ Safari web pages*, **If there's no input** → **Get Clipboard**.
 2. `Generate Hash` **SHA256** of *Body*. Then `Set Variable` **BodyHash** to it.
 3. `Dictionary`: `method` = `POST`, `path` = `/v1/items`, `body` = *BodyHash*.
    `Run Shortcut` **PhoneDrop Sign** with it. Then `Set Variable` **Req** to it.
-4. `Get Contents of URL`: **POST**, the five headers (no `X-PD-Name`), **Request Body**
+4. `Get Contents of URL`: URL *Req.url*, **POST**, the five headers from *Req* (no `X-PD-Name`), **Request Body**
    **File** = *Body*. Then `Set Variable` **Result** to it.
 5. `Text`: *Result*. Then `If` that *Text* **does not contain** `true`: `Show Alert` "PhoneDrop: *Result*".
    **End If**.
@@ -200,7 +200,7 @@ which sends the clipboard. The phone collects them with **Receive from PC**.
 
 1. `Dictionary`: `method` = `GET`, `path` = `/v1/outbox`, `body` = `-` (one hyphen).
    `Run Shortcut` **PhoneDrop Sign** with it. Then `Set Variable` **Req** to it.
-2. `Get Contents of URL`: **GET**, the five headers. Then `Set Variable` **List** to it.
+2. `Get Contents of URL`: URL *Req.url*, **GET**, the five headers from *Req*. Then `Set Variable` **List** to it.
 3. `Text`: *List*. Then `If` that *Text* **does not contain** `true`: `Show Alert` "PhoneDrop: *List*",
    `Stop This Shortcut`. **End If**.
 4. `Get Dictionary Value` key `items` in *List*. Then `Set Variable` **Items** to it. `Count` *Items*; if it

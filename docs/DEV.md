@@ -29,7 +29,7 @@ the contract, so read it first.
 | `phones.json` | paired phones; secrets DPAPI-protected (base64), never plaintext |
 | `history.json` | recent transfers (last 50), for the panel |
 | `outbox/` | laptop → phone items that need their own copy (clipboard text/images) |
-| `tls/` | CA and leaf certificate (keys DPAPI-protected) |
+| `tls/` | `ca.crt` (PEM) and `ca.key` (DPAPI-protected PKCS#8, base64); the leaf lives in memory only |
 | `phonedrop.log` | troubleshooting log, recreated each run |
 
 ## Threads

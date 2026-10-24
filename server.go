@@ -25,6 +25,10 @@ type appHooks interface {
 	received(it receivedItem)
 	// phonesChanged is called when a phone is paired, so the UI can redraw.
 	phonesChanged()
+	// sent is called after an outbox item reached the phone: a text or link once listed, a file
+	// once its whole body has been sent (outbox.go). The item is already out of the outbox, so
+	// the UI can record history and refresh its count.
+	sent(it outboxItem, phoneName string)
 }
 
 // receivedItem: one item from a phone.
@@ -44,6 +48,7 @@ type noHooks struct{}
 func (noHooks) confirmPairing(context.Context, string) bool { return false }
 func (noHooks) received(receivedItem)                       {}
 func (noHooks) phonesChanged()                              {}
+func (noHooks) sent(outboxItem, string)                     {}
 
 // server: the phone-facing HTTP listener. It binds only to the laptop's addresses on networks
 // Windows calls Private (the network watcher hands it that list), refuses peers that aren't on a
@@ -59,7 +64,9 @@ type server struct {
 	now            func() time.Time
 	laptop         string // computer name, as the phone shows it
 	confirmTimeout time.Duration
-	items          itemState // upload settings and limits (items.go)
+	out            outboxRef   // laptop → phone items (outbox.go); set with setOutbox
+	items          itemState   // upload settings and limits (items.go)
+	tlsm           *tlsManager // optional TLS: CA, leaf, profile window (tls.go)
 
 	mu        sync.Mutex
 	listeners map[netip.Addr]net.Listener
@@ -78,6 +85,7 @@ func newServer(port int, hooks appHooks, phones *phoneStore, onErr func(error)) 
 	}
 	s := &server{port: port, gate: newGate(), onErr: onErr, hooks: hooks, phones: phones, now: time.Now,
 		laptop: laptopName(), confirmTimeout: confirmTimeout, listeners: map[netip.Addr]net.Listener{}}
+	s.tlsm = newTLSManager()
 	s.auth = newVerifier(func() time.Time { return s.now() })
 	s.http = &http.Server{
 		Handler:           http.HandlerFunc(s.handle),
@@ -113,14 +121,17 @@ func (s *server) bind(addrs []netip.Addr) []netip.Addr {
 			errs = append(errs, err)
 			continue
 		}
-		gl := &gatedListener{Listener: l, gate: s.gate}
-		s.listeners[a] = gl
-		go s.http.Serve(gl)
+		// The gate drops a peer before the sniffer reads a byte from it.
+		sl := newSniffListener(&gatedListener{Listener: l, gate: s.gate}, s.tlsm)
+		s.listeners[a] = sl
+		go s.http.Serve(sl)
 	}
 	if len(errs) > 0 && s.onErr != nil {
 		s.onErr(errors.Join(errs...))
 	}
-	return s.listeningLocked()
+	listening := s.listeningLocked()
+	s.tlsm.setAddrs(listening) // a new address set gets a new leaf certificate
+	return listening
 }
 
 // listening returns the addresses currently listening.
@@ -146,12 +157,19 @@ func (s *server) handle(w http.ResponseWriter, r *http.Request) {
 		s.handlePair(w, r)
 		return
 	}
+	if r.URL.Path == caProfilePath {
+		s.handleProfile(w, r)
+		return
+	}
 	a, ok := s.auth.verify(r, s.phones.secretFor)
 	if !ok {
 		s.unauthorized(w, r)
 		return
 	}
 	s.phones.touch(a.id)
+	if !s.httpsOnly(w, r, a.id) {
+		return
+	}
 	switch p := r.URL.Path; {
 	case p == "/v1/ping":
 		if r.Method != http.MethodGet {
@@ -184,11 +202,7 @@ func (s *server) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		s.handleItem(w, r, a, ph.Name)
 	case p == "/v1/outbox" || strings.HasPrefix(p, "/v1/outbox/"): // milestone 4
-		if r.Method != http.MethodGet {
-			methodNotAllowed(w, http.MethodGet)
-			return
-		}
-		notYet(w)
+		s.handleOutbox(w, r, a)
 	default:
 		w.Header().Set("Connection", "close")
 		replyErr(w, http.StatusNotFound, "not found")

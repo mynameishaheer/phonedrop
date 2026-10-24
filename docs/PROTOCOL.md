@@ -165,13 +165,16 @@ send files to this laptop while on the same LAN.
 When the user turns on **Encrypt transfers** on the laptop:
 
 - The laptop creates a private CA (ECDSA P-256, its key DPAPI-protected) with **X.509 name
-  constraints**: it may only certify `<host>` (the `.local` name) and the private IP ranges.
-  A leaf certificate for `<host>` and the current IPs is re-issued whenever the IPs change.
-- During a pairing window (or the *Set up encryption* window), `GET /v1/ca.mobileconfig`
-  (unauthenticated) serves the CA as an iOS configuration profile. The user installs it and turns
-  on full trust (Settings → General → About → Certificate Trust Settings).
+  constraints**: it may only certify `<host>` (the `.local` name) and the private IP ranges
+  (plus loopback). A leaf certificate for `<host>` and the current IPs is re-issued whenever the
+  IPs change. TLS 1.2 or later.
+- For 10 minutes after a successful pairing (or while the *Set up encryption* window is open),
+  `GET /v1/ca.mobileconfig` (unauthenticated) serves the CA as an iOS configuration profile
+  (`application/x-apple-aspen-config`); at any other time it is the usual `401`. The user
+  installs it and turns on full trust (Settings → General → About → Certificate Trust Settings).
 - The phone's config then uses `https://`. Once a phone has made one signed HTTPS request, the
-  laptop refuses that phone's plain-HTTP requests (`403 {"ok":false,"error":"use https"}`).
+  laptop refuses that phone's plain-HTTP requests (`403 {"ok":false,"error":"use https"}`) while
+  encryption is on. Turning it off accepts plain HTTP from every phone again.
 
 Name constraints are what make installing the CA safe: without them, a stolen CA key could
 impersonate any website to that phone. **Check on a real iPhone that iOS enforces them before

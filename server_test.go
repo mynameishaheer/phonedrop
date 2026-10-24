@@ -120,6 +120,14 @@ type fakeHooks struct {
 	asked   chan string
 	answer  chan bool
 	changed chan struct{}
+
+	sentMu sync.Mutex
+	sents  []sentRecord
+}
+
+type sentRecord struct {
+	item  outboxItem
+	phone string
 }
 
 func newFakeHooks() *fakeHooks {
@@ -136,7 +144,17 @@ func (h *fakeHooks) confirmPairing(ctx context.Context, name string) bool {
 	}
 }
 func (h *fakeHooks) received(receivedItem) {}
-func (h *fakeHooks) phonesChanged()        { h.changed <- struct{}{} }
+func (h *fakeHooks) sent(it outboxItem, phone string) {
+	h.sentMu.Lock()
+	h.sents = append(h.sents, sentRecord{it, phone})
+	h.sentMu.Unlock()
+}
+func (h *fakeHooks) sentLog() []sentRecord {
+	h.sentMu.Lock()
+	defer h.sentMu.Unlock()
+	return append([]sentRecord(nil), h.sents...)
+}
+func (h *fakeHooks) phonesChanged() { h.changed <- struct{}{} }
 
 // testServer: a server on 127.0.0.1 with a fake clock (shared by the phone client).
 type testServer struct {

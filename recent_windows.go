@@ -38,7 +38,7 @@ func (u *ui) drainInbox() {
 		}
 		u.showToast(t)
 	}
-	if len(items) > 0 && u.visible && !u.hiding && u.view == "main" {
+	if u.visible && !u.hiding && u.view == "main" {
 		u.refreshRecent()
 		u.relayout()
 	}
@@ -150,4 +150,17 @@ func (u *ui) openRecent(id string) {
 func exists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
+}
+
+// sent (appHooks): the phone collected an item; record it and update the outbox count.
+func (u *ui) sent(it outboxItem, phone string) {
+	if u.hist != nil {
+		name := it.Name
+		if it.Kind == "text" || it.Kind == "url" {
+			name = ""
+		}
+		u.hist.add(historyEntry{Kind: it.Kind, Name: name, Text: it.Text, Size: it.Size, From: phone,
+			Time: time.Now(), Dir: "out"})
+	}
+	postMsg.Call(u.hwnd, wmReceived, 0, 0) // redraws the Recent list and the count
 }

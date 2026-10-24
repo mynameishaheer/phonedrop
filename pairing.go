@@ -72,6 +72,10 @@ func laptopName() string {
 	return h
 }
 
+// mdnsHost: the name phones use for this PC, <hostname>.local in lower case (the QR code's host
+// and the name the TLS certificates are for).
+func mdnsHost() string { return strings.ToLower(laptopName()) + ".local" }
+
 // startPairing opens a pairing window and returns the QR code's JSON and when the window
 // closes. It replaces any earlier pending pairing and aborts a confirmation in flight.
 func (s *server) startPairing(info pairingInfo) (qrJSON string, expires time.Time) {
@@ -79,7 +83,7 @@ func (s *server) startPairing(info pairingInfo) (qrJSON string, expires time.Tim
 		info.Name = s.laptop
 	}
 	if info.Host == "" {
-		info.Host = strings.ToLower(laptopName()) + ".local"
+		info.Host = mdnsHost()
 	}
 	if info.IPs == nil {
 		info.IPs = s.listening()
@@ -209,6 +213,9 @@ func (s *server) handlePair(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("pairing: phone %s paired", a.id)
 	s.hooks.phonesChanged()
+	if s.tlsEnabled() {
+		s.openProfileWindow(profileWindow) // the Setup shortcut fetches the CA next
+	}
 	reply(w, http.StatusOK, struct {
 		OK     bool   `json:"ok"`
 		Laptop string `json:"laptop"`

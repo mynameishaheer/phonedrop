@@ -44,6 +44,9 @@ func main() {
 	srv.setConfig(serverConfig{SaveDir: u.set.saveDir()})
 	u.onSettings = func(st settings) { srv.setConfig(serverConfig{SaveDir: st.saveDir()}) }
 	u.app = srvBackend{srv}
+	out := newOutbox("", time.Now)
+	srv.setOutbox(out)
+	u.out = out
 	u.hist = loadHistory("")
 	go watchNetworks(func(st netState) {
 		for _, n := range st.networks {

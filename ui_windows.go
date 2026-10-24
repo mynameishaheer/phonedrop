@@ -458,7 +458,7 @@ func (u *ui) drawSettings(c *canvas, p rectF) {
 
 	hint := "Listens on port " + strconv.Itoa(u.set.Port) + ", on Private networks only"
 	if u.set.Encrypt {
-		hint = "Encrypted: phones install a certificate when pairing"
+		hint = "Encrypted. Pair phones again to install the certificate"
 	}
 	c.icon(icLock, false, fontIconSm, 14, rectF{x, y, 18, 20}, t.text2)
 	c.text(hint, fontSmall, rectF{x + 22, y, w - 22, 20}, t.text2, 0, 1)

@@ -42,6 +42,12 @@ func main() {
 		u.setListenErr(err)
 	})
 	srv.setConfig(serverConfig{SaveDir: u.set.saveDir()})
+	if u.set.Encrypt {
+		if err := srv.setTLS(true); err != nil {
+			log.Printf("encryption: %v", err)
+		}
+	}
+	u.onEncrypt = srv.setTLS
 	u.onSettings = func(st settings) { srv.setConfig(serverConfig{SaveDir: st.saveDir()}) }
 	u.app = srvBackend{srv}
 	out := newOutbox("", time.Now)

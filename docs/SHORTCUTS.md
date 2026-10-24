@@ -48,8 +48,12 @@ the URL and headers for one request. The other shortcuts call it with a *Diction
 
    For *Shortcut Input.method*, insert **Shortcut Input**, tap it, choose **Dictionary**, key
    `method`. Do the same for `path` and `body`.
+
+   > **No spaces around the `|`.** It must read `…secret|GET|/v1/pair|…`, not `secret | GET`.
+   > The keyboard sometimes adds a space next to a variable bubble; delete it. A single extra
+   > space makes every request `unauthorized` (the PC's log then says *signature mismatch*).
 8. `Generate Hash` **SHA256** of the *Text* from step 7. Then `Set Variable` **Inner** to it.
-9. `Text`: *Config.secret*`|`*Inner*.
+9. `Text`: *Config.secret*`|`*Inner* (again no spaces).
 10. `Generate Hash` **SHA256** of the *Text* from step 9. Then `Set Variable` **Sig** to it.
 11. `Text`: type `http://`, then insert *Config* (key `base`) and, right after it with no space,
     **Shortcut Input** → **Dictionary** → key `path`. It reads

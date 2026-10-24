@@ -15,10 +15,11 @@ PhoneDrop needs no iPhone app. It uses six shortcuts you build once in Apple's *
 > Shortcuts app as an iCloud link, so other people install it with one tap.
 
 **How to read the steps.** `Action name` is what you type in the search bar at the bottom of the
-editor. **Bold** words are settings inside an action. *Italic* names are variables: tap the field,
-choose **Select Variable**, and pick the output of the action with that name. To give an output
-a name, tap it and choose **Rename**. *Config.secret* means: insert the variable *Config*, tap
-it, and choose the key `secret`. Type the `|` characters and keys exactly as shown, with no
+editor. **Bold** words are settings inside an action. When a step says "then `Set Variable`
+**Name** to it", add a **Set Variable** action right after it, type the name, and set its input
+to that action's output. Later, *Name* in italics means: tap the field, choose **Select
+Variable**, and pick the variable *Name*. *Config.secret* means: insert the variable *Config*,
+tap it, and choose the key `secret`. Type the `|` characters and keys exactly as shown, with no
 spaces.
 
 Before you start: in **Settings → Apps → Shortcuts → Advanced**, turn on **Allow Sharing Large
@@ -33,24 +34,26 @@ the URL and headers for one request. The other shortcuts call it with a *Diction
 `method`, `path` and `body`.
 
 1. `Get File from Folder`: folder **Shortcuts**, path `PhoneDrop/config.json`, **Error If Not
-   Found** on. Rename **ConfigFile**.
-2. `Get Dictionary from Input` (input: *ConfigFile*). Rename **Config**.
+   Found** on. Shortcuts may pre-fill the folder with *Shortcut Input*: tap it, **Clear**, then
+   pick iCloud Drive → **Shortcuts**. Then `Set Variable` **ConfigFile** to it.
+2. `Get Dictionary from Input` (input: *ConfigFile*). Then `Set Variable` **Config** to it.
 3. `Format Date`: date **Current Date**, **Date Format** *ISO 8601*, **Include ISO 8601 Time**
-   on. Rename **Time**.
-4. `Random Number` from `100000000` to `999999999`. Rename **R1**.
-5. `Random Number` from `100000000` to `999999999`. Rename **R2**.
-6. `Text`: *R1* *R2* *Time*. Then `Generate Hash` **SHA256** of that *Text*. Rename **Nonce**.
+   on. Then `Set Variable` **Time** to it.
+4. `Random Number` from `100000000` to `999999999`. Then `Set Variable` **R1** to it.
+5. `Random Number` from `100000000` to `999999999`. Then `Set Variable` **R2** to it.
+6. `Text`: *R1* *R2* *Time*. Then `Generate Hash` **SHA256** of that *Text*, then
+   `Set Variable` **Nonce** to it.
 7. `Text` (one line):
    *Config.secret*`|`*Shortcut Input.method*`|`*Shortcut Input.path*`|`*Time*`|`*Nonce*`|`*Shortcut Input.body*
 
    For *Shortcut Input.method*, insert **Shortcut Input**, tap it, choose **Dictionary**, key
    `method`. Do the same for `path` and `body`.
-8. `Generate Hash` **SHA256** of the *Text* from step 7. Rename **Inner**.
+8. `Generate Hash` **SHA256** of the *Text* from step 7. Then `Set Variable` **Inner** to it.
 9. `Text`: *Config.secret*`|`*Inner*.
-10. `Generate Hash` **SHA256** of the *Text* from step 9. Rename **Sig**.
+10. `Generate Hash` **SHA256** of the *Text* from step 9. Then `Set Variable` **Sig** to it.
 11. `Text`: type `http://`, then insert *Config* (key `base`) and, right after it with no space,
     **Shortcut Input** → **Dictionary** → key `path`. It reads
-    `http://` [Config: base] [Shortcut Input: path]. Rename **URL**.
+    `http://` [Config: base] [Shortcut Input: path]. Then `Set Variable` **URL** to it.
 
     *Only if you turn on **Encrypt transfers** on the PC (§7):* this Text must say `https://`
     for everything except Setup's two requests (which pass `plain`). See §7 for the extra steps.
@@ -87,30 +90,30 @@ That's what the shortcuts check for.
 
 Create **PhoneDrop Setup**.
 
-1. `Scan QR or Barcode`. Rename **QR**.
-2. `Get Dictionary from Input` (input: *QR*). Rename **Pairing**.
+1. `Scan QR or Barcode`. Then `Set Variable` **QR** to it.
+2. `Get Dictionary from Input` (input: *QR*). Then `Set Variable` **Pairing** to it.
 3. `If` *QR* **contains** `secret`. Inside the If:
    1. `Set Name` of *QR* to `config.json` (otherwise Shortcuts may save it as `config.txt`).
       Then `Save File`: input *Renamed Item*, **Ask Where to Save** off, **Destination Path**
       `PhoneDrop/config.json`, **Overwrite If File Exists** on.
-   2. `Get Device Details`: **Device Name**. Rename **Name**.
-   3. `Generate Hash` **SHA256** of *Name*. Rename **BodyHash**.
+   2. `Get Device Details`: **Device Name**. Then `Set Variable` **Name** to it.
+   3. `Generate Hash` **SHA256** of *Name*. Then `Set Variable` **BodyHash** to it.
    4. `Dictionary`: `method` = `POST`, `path` = `/v1/pair`, `body` = *BodyHash*, `plain` = `1`.
    5. `Run Shortcut` **PhoneDrop Sign** with the *Dictionary* (**Show While Running** off).
-      Rename **Req**.
+      Then `Set Variable` **Req** to it.
    6. `Get Contents of URL`: **POST**, the five headers, **Request Body** **File** = *Name*.
-      Rename **Result**.
+      Then `Set Variable` **Result** to it.
    7. `If` *Result* **contains** `true`: `Show Alert` "Paired! You're ready to send."
       **Otherwise**: `Show Alert` "Pairing didn't work: *Result*", then `Stop This Shortcut`.
       **End If**.
    8. *Only if you use **Encrypt transfers** on the PC (§7); otherwise skip.*
       `Get Dictionary Value` key `tls` in *Pairing*. `If` *Dictionary Value* **has any value**:
       1. `Dictionary`: `method` = `GET`, `path` = `/v1/ca.mobileconfig`, `body` = `-`,
-         `plain` = `1`. `Run Shortcut` **PhoneDrop Sign** with it. Rename **ProfileReq**.
+         `plain` = `1`. `Run Shortcut` **PhoneDrop Sign** with it. Then `Set Variable` **ProfileReq** to it.
       2. `Get Contents of URL`: URL *ProfileReq.url*, **GET**, the five headers from
-         *ProfileReq*. Rename **Profile**.
+         *ProfileReq*. Then `Set Variable` **Profile** to it.
       3. `Generate Hash` **SHA256** of *Profile*, then `Change Case` to **lowercase**.
-         Rename **ProfileHash**.
+         Then `Set Variable` **ProfileHash** to it.
       4. `If` *ProfileHash* **is** *Pairing.ca*:
          `Set Name` of *Profile* to `PhoneDrop.mobileconfig`, then `Save File` *Renamed Item*,
          **Ask Where to Save** off, **Destination Path**
@@ -134,12 +137,12 @@ set **Receive** to *Images, Media, Files* and **If there's no input** to **Ask F
 (or add `Select Photos` with **Select Multiple** on).
 
 1. `Repeat with Each` item in **Shortcut Input**. Inside:
-   1. `Get Name` of *Repeat Item*. Then `URL Encode` it. Rename **EncodedName**.
-   2. `Generate Hash` **SHA256** of *Repeat Item*. Rename **BodyHash**.
+   1. `Get Name` of *Repeat Item*. Then `URL Encode` it. Then `Set Variable` **EncodedName** to it.
+   2. `Generate Hash` **SHA256** of *Repeat Item*. Then `Set Variable` **BodyHash** to it.
    3. `Dictionary`: `method` = `POST`, `path` = `/v1/items`, `body` = *BodyHash*.
-      `Run Shortcut` **PhoneDrop Sign** with it. Rename **Req**.
+      `Run Shortcut` **PhoneDrop Sign** with it. Then `Set Variable` **Req** to it.
    4. `Get Contents of URL`: **POST**, the five headers plus `X-PD-Name` = *EncodedName*,
-      **Request Body** **File** = *Repeat Item*. Rename **Result**.
+      **Request Body** **File** = *Repeat Item*. Then `Set Variable` **Result** to it.
    5. `If` *Result* **does not contain** `true`: `Show Alert` "PhoneDrop: *Result*",
       `Stop This Shortcut`. **End If**.
 2. **End Repeat**. Optionally `Show Notification` "Sent to PC".
@@ -156,13 +159,13 @@ On the PC, photos and files are saved (default: Downloads) and a notification of
 Create **Send Text to PC**. **Show in Share Sheet** on, **Receive** *Text, URLs, Rich Text,
 Safari web pages*, **If there's no input** → **Get Clipboard**.
 
-1. `Text`: **Shortcut Input**. Rename **Body**. This turns links and pages into plain text, so
+1. `Text`: **Shortcut Input**. Then `Set Variable` **Body** to it. This turns links and pages into plain text, so
    the hash and the upload are the same bytes.
-2. `Generate Hash` **SHA256** of *Body*. Rename **BodyHash**.
+2. `Generate Hash` **SHA256** of *Body*. Then `Set Variable` **BodyHash** to it.
 3. `Dictionary`: `method` = `POST`, `path` = `/v1/items`, `body` = *BodyHash*.
-   `Run Shortcut` **PhoneDrop Sign** with it. Rename **Req**.
+   `Run Shortcut` **PhoneDrop Sign** with it. Then `Set Variable` **Req** to it.
 4. `Get Contents of URL`: **POST**, the five headers (no `X-PD-Name`), **Request Body**
-   **File** = *Body*. Rename **Result**.
+   **File** = *Body*. Then `Set Variable` **Result** to it.
 5. `If` *Result* **does not contain** `true`: `Show Alert` "PhoneDrop: *Result*". **End If**.
 
 The PC copies text to its clipboard (if *Copy received text* is on) and shows links with an
@@ -194,23 +197,23 @@ On the PC you queue things for the phone in three ways: right-click files in Exp
 which sends the clipboard. The phone collects them with **Receive from PC**.
 
 1. `Dictionary`: `method` = `GET`, `path` = `/v1/outbox`, `body` = `-` (one hyphen).
-   `Run Shortcut` **PhoneDrop Sign** with it. Rename **Req**.
-2. `Get Contents of URL`: **GET**, the five headers. Rename **List**.
+   `Run Shortcut` **PhoneDrop Sign** with it. Then `Set Variable` **Req** to it.
+2. `Get Contents of URL`: **GET**, the five headers. Then `Set Variable` **List** to it.
 3. `If` *List* **does not contain** `true`: `Show Alert` "PhoneDrop: *List*",
    `Stop This Shortcut`. **End If**.
-4. `Get Dictionary Value` key `items` in *List*. Rename **Items**. `Count` *Items*; if it
+4. `Get Dictionary Value` key `items` in *List*. Then `Set Variable` **Items** to it. `Count` *Items*; if it
    **is** `0`, `Show Notification` "Nothing waiting on the PC" and `Stop This Shortcut`.
 5. `Repeat with Each` item in *Items*. Inside:
-   1. `Get Dictionary Value` key `kind` in *Repeat Item*. Rename **Kind**.
+   1. `Get Dictionary Value` key `kind` in *Repeat Item*. Then `Set Variable` **Kind** to it.
    2. `If` *Kind* **is** `text`: `Copy to Clipboard` *Repeat Item.text*. **End If**.
    3. `If` *Kind* **is** `url`: `If` *Repeat Item.text* **begins with** `http`:
       `Open URLs` *Repeat Item.text*. **Otherwise**: `Copy to Clipboard` it. **End If**.
       **End If**.
    4. `If` *Kind* **is** `image`, and again for `video` and `file` (three Ifs, or `Otherwise`s):
       1. `Dictionary`: `method` = `GET`, `path` = *Repeat Item.path*, `body` = `-`.
-         `Run Shortcut` **PhoneDrop Sign** with it. Rename **FileReq**.
+         `Run Shortcut` **PhoneDrop Sign** with it. Then `Set Variable` **FileReq** to it.
       2. `Get Contents of URL`: URL *FileReq.url*, **GET**, the five headers from *FileReq*.
-         Rename **Download**.
+         Then `Set Variable` **Download** to it.
       3. For `image` and `video`: `Save to Photo Album` *Download*. For `file`: `Save File`
          *Download* (**Ask Where to Save** on).
 6. **End Repeat**. `Show Notification` "Received *Count* from the PC".

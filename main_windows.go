@@ -41,6 +41,8 @@ func main() {
 		log.Printf("listen: %v", err)
 		u.setListenErr(err)
 	})
+	srv.setConfig(serverConfig{SaveDir: u.set.saveDir()})
+	u.onSettings = func(st settings) { srv.setConfig(serverConfig{SaveDir: st.saveDir()}) }
 	u.app = srvBackend{srv}
 	u.hist = loadHistory("")
 	go watchNetworks(func(st netState) {

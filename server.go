@@ -27,9 +27,9 @@ type appHooks interface {
 	phonesChanged()
 }
 
-// receivedItem: one item from a phone (filled in by milestone 3).
+// receivedItem: one item from a phone.
 type receivedItem struct {
-	Kind string // "file", "text" or "url"
+	Kind string // "image", "video", "file", "text" or "url"
 	Name string // saved file name (files)
 	Path string // full path of the saved file (files)
 	Text string // the text or link (text, url)
@@ -59,6 +59,7 @@ type server struct {
 	now            func() time.Time
 	laptop         string // computer name, as the phone shows it
 	confirmTimeout time.Duration
+	items          itemState // upload settings and limits (items.go)
 
 	mu        sync.Mutex
 	listeners map[netip.Addr]net.Listener
@@ -171,12 +172,17 @@ func (s *server) handle(w http.ResponseWriter, r *http.Request) {
 			Version string `json:"version"`
 			TLS     bool   `json:"tls"`
 		}{true, s.laptop, version, r.TLS != nil})
-	case p == "/v1/items": // milestone 3
+	case p == "/v1/items":
 		if r.Method != http.MethodPost {
 			methodNotAllowed(w, http.MethodPost)
 			return
 		}
-		notYet(w)
+		ph, ok := s.phones.get(a.id)
+		if !ok { // removed while the request was being checked
+			s.unauthorized(w, r)
+			return
+		}
+		s.handleItem(w, r, a, ph.Name)
 	case p == "/v1/outbox" || strings.HasPrefix(p, "/v1/outbox/"): // milestone 4
 		if r.Method != http.MethodGet {
 			methodNotAllowed(w, http.MethodGet)

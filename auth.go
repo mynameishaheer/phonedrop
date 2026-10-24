@@ -339,11 +339,16 @@ func readBody(body io.Reader, want string, max int64) ([]byte, error) {
 // whole body arrived, is at most max bytes and matches want. On any failure the temporary file
 // is gone. The caller renames or removes the file.
 func saveBody(body io.Reader, want, dir string, max int64) (path string, size int64, err error) {
-	f, err := os.CreateTemp(dir, ".phonedrop-*.part")
+	return saveStream(verifyBody(body, want), dir, max)
+}
+
+// saveStream is saveBody for a body that is already verified (or verifies itself as it is read).
+func saveStream(body io.Reader, dir string, max int64) (path string, size int64, err error) {
+	f, err := os.CreateTemp(dir, partPattern)
 	if err != nil {
 		return "", 0, err
 	}
-	size, err = io.Copy(f, io.LimitReader(verifyBody(body, want), max+1))
+	size, err = io.Copy(f, io.LimitReader(body, max+1))
 	if err == nil && size > max {
 		err = errTooLarge
 	}

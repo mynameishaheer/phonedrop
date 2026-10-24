@@ -442,8 +442,8 @@ func TestAuthenticatedRoutes(t *testing.T) {
 	}{
 		{"GET", "/v1/ping", nil, 200},
 		{"POST", "/v1/ping", nil, 405},
-		{"GET", "/v1/ping", []byte("x"), 200}, // a body with a correct hash is tolerated
-		{"POST", "/v1/items", []byte("x"), 501},
+		{"GET", "/v1/ping", []byte("x"), 200},   // a body with a correct hash is tolerated
+		{"POST", "/v1/items", []byte("x"), 200}, // text: nothing is written
 		{"GET", "/v1/items", nil, 405},
 		{"GET", "/v1/outbox", nil, 501},
 		{"GET", "/v1/outbox/a1b2c3d4", nil, 501},

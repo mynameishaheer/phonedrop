@@ -48,15 +48,13 @@ the URL and headers for one request. The other shortcuts call it with a *Diction
 8. `Generate Hash` **SHA256** of the *Text* from step 7. Rename **Inner**.
 9. `Text`: *Config.secret*`|`*Inner*.
 10. `Generate Hash` **SHA256** of the *Text* from step 9. Rename **Sig**.
-11. Pick http or https. It's https only when the PC has encryption on, and never for the two
-    setup requests, which pass `plain`:
-    1. `Text`: `http`. `Set Variable` **Scheme** to it.
-    2. `Get Dictionary Value` key `tls` in *Config*. Rename **TLS**.
-       `Get Dictionary Value` key `plain` in **Shortcut Input**. Rename **Plain**.
-    3. `If` *TLS* **has any value**, and nested inside it `If` *Plain* **does not have any
-       value**: `Text` `https`, then `Set Variable` **Scheme** to it. **End If**. **End If**.
-12. `Text`: *Scheme*`://`*Config.base**Shortcut Input.path*. Rename **URL**.
-13. `Dictionary`, with these keys (type **Text**):
+11. `Text`: type `http://`, then insert *Config* (key `base`) and, right after it with no space,
+    **Shortcut Input** → **Dictionary** → key `path`. It reads
+    `http://` [Config: base] [Shortcut Input: path]. Rename **URL**.
+
+    *Only if you turn on **Encrypt transfers** on the PC (§7):* this Text must say `https://`
+    for everything except Setup's two requests (which pass `plain`). See §7 for the extra steps.
+12. `Dictionary`, with these keys (type **Text**):
 
     | Key | Value |
     |---|---|
@@ -67,7 +65,7 @@ the URL and headers for one request. The other shortcuts call it with a *Diction
     | `body` | *Shortcut Input.body* |
     | `sig` | *Sig* |
 
-14. `Stop and Output`: the *Dictionary*.
+13. `Stop and Output`: the *Dictionary*.
 
 In the shortcut's settings (ⓘ), make sure **Show in Share Sheet** is off.
 
@@ -225,6 +223,12 @@ vouch for itself (its own `.local` name and private IP addresses). The Setup sho
 it, checks it against the hash in the QR code so nobody on the network can swap it, and saves it
 for you to install. From then on the phone talks to the PC over HTTPS only.
 
+- **Change PhoneDrop Sign** so it picks https: replace step 11's `http://` with a *Scheme*
+  variable. Before step 11 add `Text` `http` → `Set Variable` **Scheme**; then
+  `Get Dictionary Value` key `tls` in *Config*, and `If` it **has any value**:
+  `Get Dictionary Value` key `plain` in **Shortcut Input**, `If` that **does not have any value**:
+  `Text` `https` → `Set Variable` **Scheme**. **End If**, **End If**. In step 11 use *Scheme*
+  followed by `://` instead of `http://`.
 - Turned encryption **on** after pairing? Remove the phone in the PC's panel and pair again, so
   the new QR code carries the certificate.
 - Turned it **off**? Phones paired with it on keep trying HTTPS, so pair them again too.

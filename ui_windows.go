@@ -6,6 +6,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"net/netip"
 	"os"
@@ -72,6 +73,13 @@ type ui struct {
 	confirm        *confirmReq // the request the prompt is showing
 	removeID       string      // phone whose bin was clicked once (a second click removes it)
 	removeAt       time.Time
+	hist           *history
+	recent         []historyEntry // shown in the panel
+	onSettings     func(settings) // tells the server about a changed save folder etc.
+	out            sender
+	onEncrypt      func(on bool) error
+	startFiles     []string // files passed on the command line (Send to), queued once the UI is up
+	hotkeyErr      bool     // Ctrl+Alt+P is taken by another app
 
 	mu         sync.Mutex // guards the fields below (written by the watcher and server goroutines)
 	net        netState
@@ -81,6 +89,7 @@ type ui struct {
 	flash      string
 	flashUntil time.Time
 	pending    *confirmReq // a pairing request waiting for an answer
+	inbox      []receivedItem
 }
 
 var theUI *ui
@@ -196,11 +205,11 @@ func (u *ui) trayTip() string {
 // ---------- drawing ----------
 
 func (u *ui) mainHeight() float32 {
-	return pad + statusH + labelH + u.phonesHeight() + pad + footerH
+	return pad + statusH + labelH + u.phonesHeight() + u.sendHeight() + u.recentHeight() + pad + footerH
 }
 
 func (u *ui) settingsHeight() float32 {
-	return 48 + labelH + 64 + 48 + labelH + 48 + 12 + 20 + pad
+	return 48 + labelH + 64 + 48 + labelH + 3*48 + 12 + 20 + pad
 }
 
 func (u *ui) height() float32 {
@@ -313,6 +322,8 @@ func (u *ui) drawMain(c *canvas, p rectF, s snap) {
 	c.text("Phones", fontSmallSemi, rectF{x + 2, y + 10, w, labelH - 10}, t.text2, 0, 1)
 	y += labelH
 	u.drawPhones(c, x, y, w)
+	u.drawSend(c, x, y+u.phonesHeight(), w)
+	u.drawRecent(c, x, y+u.phonesHeight()+u.sendHeight(), w)
 
 	// Footer: where files go, plus folder, settings and quit buttons.
 	fy := p.Y + p.H - footerH
@@ -433,13 +444,24 @@ func (u *ui) drawSettings(c *canvas, p rectF) {
 
 	c.text("General", fontSmallSemi, rectF{x + 2, y + 10, w, labelH - 10}, t.text2, 0, 1)
 	y += labelH
-	u.drawCard(c, rectF{x, y, w, 48}, t.card)
-	u.switchRow(c, rectF{x, y, w, 48}, "Start when I sign in", "sw:login", u.startAtLogin)
-	y += 48 + 12
+	u.drawCard(c, rectF{x, y, w, 3 * 48}, t.card)
+	hk := "Ctrl+Alt+P sends the clipboard to the phone"
+	if u.hotkeyErr && u.set.Hotkey {
+		hk = "Ctrl+Alt+P (taken by another app)"
+	}
+	u.switchRow(c, rectF{x, y, w, 48}, hk, "sw:hotkey", u.set.Hotkey)
+	c.fill(rectF{x + 1, y + 48, w - 2, 1}, 0, t.divider)
+	u.switchRow(c, rectF{x, y + 48, w, 48}, "Encrypt transfers (beta)", "sw:encrypt", u.set.Encrypt)
+	c.fill(rectF{x + 1, y + 96, w - 2, 1}, 0, t.divider)
+	u.switchRow(c, rectF{x, y + 96, w, 48}, "Start when I sign in", "sw:login", u.startAtLogin)
+	y += 3*48 + 12
 
+	hint := "Listens on port " + strconv.Itoa(u.set.Port) + ", on Private networks only"
+	if u.set.Encrypt {
+		hint = "Encrypted: phones install a certificate when pairing"
+	}
 	c.icon(icLock, false, fontIconSm, 14, rectF{x, y, 18, 20}, t.text2)
-	c.text("Listens on port "+strconv.Itoa(u.set.Port)+", on Private networks only",
-		fontSmall, rectF{x + 22, y, w - 22, 20}, t.text2, 0, 1)
+	c.text(hint, fontSmall, rectF{x + 22, y, w - 22, 20}, t.text2, 0, 1)
 }
 
 // ---------- window plumbing ----------
@@ -555,6 +577,7 @@ func (u *ui) show(view string) {
 	u.th = loadTheme()
 	u.startAtLogin = runAtLogin()
 	u.refreshPhones()
+	u.refreshRecent()
 	u.view, u.hover, u.press, u.hiding = view, "", "", false
 	u.position(u.trayRect(), panelW, u.height())
 	u.visible = true
@@ -628,17 +651,46 @@ func (u *ui) click(id string) {
 	case "btn:pair":
 		u.beginPairing()
 		return
+	case "btn:sendfiles":
+		u.hide()
+		if files := pickFiles(); len(files) > 0 {
+			u.queueFiles(files)
+		}
+		return
+	case "btn:sendclip":
+		u.sendClipboard()
+		return
+	case "btn:clearout":
+		u.out.clear()
+		u.relayout()
+		return
 	case "btn:savedir":
 		u.hide()
 		if dir, ok := pickFolder(u.set.saveDir()); ok {
 			u.set.SaveDir = dir
 			u.set.save()
+			u.settingsChanged()
 		}
 		u.show("settings")
 		return
 	case "sw:autocopy":
 		u.set.AutoCopy = !u.set.AutoCopy
 		u.set.save()
+	case "sw:encrypt":
+		on := !u.set.Encrypt
+		if u.onEncrypt != nil {
+			if err := u.onEncrypt(on); err != nil {
+				log.Printf("encryption: %v", err)
+				u.flashMsg("Couldn't change encryption")
+				break
+			}
+		}
+		u.set.Encrypt = on
+		u.set.save()
+	case "sw:hotkey":
+		u.set.Hotkey = !u.set.Hotkey
+		u.set.save()
+		u.registerHotkey()
 	case "sw:login":
 		if exe, err := os.Executable(); err == nil && setRunAtLogin(!u.startAtLogin, exe) {
 			u.startAtLogin = !u.startAtLogin
@@ -646,6 +698,10 @@ func (u *ui) click(id string) {
 	default:
 		if strings.HasPrefix(id, "rm:") {
 			u.remove(id[3:])
+			return
+		}
+		if strings.HasPrefix(id, "rec:") || strings.HasPrefix(id, "recf:") {
+			u.openRecent(id)
 			return
 		}
 	}
@@ -698,6 +754,12 @@ func wcslen(p *uint16) int {
 	for s := unsafe.Pointer(p); *(*uint16)(unsafe.Add(s, 2*n)) != 0; n++ {
 	}
 	return n
+}
+
+func (u *ui) settingsChanged() {
+	if u.onSettings != nil {
+		u.onSettings(u.set)
+	}
 }
 
 func (u *ui) refreshPhones() {
@@ -842,6 +904,9 @@ func uiProc(hwnd, m, wParam, lParam uintptr) uintptr {
 	case wmConfirm:
 		u.askConfirm()
 		return 0
+	case wmReceived:
+		u.drainInbox()
+		return 0
 	case wmConfirmGone:
 		u.confirmGone()
 		return 0
@@ -924,6 +989,17 @@ func uiProc(hwnd, m, wParam, lParam uintptr) uintptr {
 		return 0
 	case 0x0102, 0x0106: // WM_CHAR, WM_SYSCHAR: swallow (no "ding" for Alt+key)
 		return 0
+	case 0x0312: // WM_HOTKEY
+		if wParam == hotkeySend {
+			u.sendClipboard()
+		}
+		return 0
+	case 0x004A: // WM_COPYDATA: files from Explorer's Send to (via a second PhoneDrop)
+		if files := copyDataFilesFrom(lParam); len(files) > 0 {
+			u.queueFiles(files)
+			return 1
+		}
+		return 0
 	case 0x001A: // WM_SETTINGCHANGE: light/dark or accent changed
 		u.th = loadTheme()
 		u.addTray(true)
@@ -958,6 +1034,10 @@ func runUI(u *ui) {
 		ptr(wstr(appName)), wsPopup, 0, 0, 1, 1, 0, 0, inst, 0)
 	u.taskbarCreated = uint32(win(user32, "RegisterWindowMessageW", ptr(wstr("TaskbarCreated"))))
 	u.addTray(false)
+	u.registerHotkey()
+	if len(u.startFiles) > 0 {
+		u.queueFiles(u.startFiles)
+	}
 
 	var m msg
 	for {

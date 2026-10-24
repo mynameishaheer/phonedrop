@@ -65,6 +65,8 @@ func kindIcon(kind string) [2]rune {
 		return icClipboardText
 	case "url":
 		return icLink
+	case "queued":
+		return icSend
 	}
 	return icDocument
 }
@@ -100,6 +102,8 @@ func (t *toaster) content() (icon [2]rune, title, sub string, actions []toastAct
 	}
 	icon, title = kindIcon(it.kind), it.title
 	switch it.kind {
+	case "queued": // laptop → phone confirmation
+		sub = it.text
 	case "text":
 		title = "Text from " + it.from
 		sub = firstLine(it.text)

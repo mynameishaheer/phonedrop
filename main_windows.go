@@ -19,14 +19,20 @@ func main() {
 		preview(*previewDir)
 		return
 	}
-	// One instance per sign-in; starting it again (Start menu, Run key) is harmless.
+	// One instance per sign-in; starting it again (Start menu, Run key) is harmless. Explorer's
+	// Send to starts a second one with file arguments, which it hands to the running one.
+	files := flag.Args()
 	if _, _, err := kernel32.NewProc("CreateMutexW").Call(0, 0, ptr(wstr(`Local\PhoneDrop`))); err == syscall.Errno(183) {
+		for i := 0; i < 20 && len(files) > 0 && !forwardToRunning(files); i++ {
+			time.Sleep(250 * time.Millisecond) // it may still be starting
+		}
 		return
 	}
 	user32.NewProc("SetProcessDpiAwarenessContext").Call(^uintptr(3)) // PER_MONITOR_AWARE_V2 (-4)
 	openLog()
 
-	u := &ui{view: "main", set: loadSettings(), th: loadTheme(), scale: 1, recheck: make(chan struct{}, 1)}
+	u := &ui{view: "main", set: loadSettings(), th: loadTheme(), scale: 1, recheck: make(chan struct{}, 1),
+		startFiles: files}
 	theUI = u
 	log.Printf("%s starting, port %d", appName, u.set.Port)
 	phones := loadPhones(phonesPath(), dpapiProtect, dpapiUnprotect)
@@ -36,6 +42,7 @@ func main() {
 		u.setListenErr(err)
 	})
 	u.app = srvBackend{srv}
+	u.hist = loadHistory("")
 	go watchNetworks(func(st netState) {
 		for _, n := range st.networks {
 			log.Printf("network %q category=%d addrs=%v", n.name, n.category, n.addrs)

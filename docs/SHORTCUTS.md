@@ -104,15 +104,91 @@ scan the code. The PC asks *Allow "your iPhone" to send to this PC?*: click **Al
 
 ## 3. Send to PC
 
-*Coming with milestone 3.*
+Create **Send to PC**. Open its settings (ⓘ): turn on **Show in Share Sheet**, and in the
+first action set **Receive** to *Images, Media, Files, URLs, Text, Rich Text, Safari web
+pages* and **If there's no input** to **Get Clipboard**. With no input (Back Tap, Siri) it
+sends what you copied.
+
+1. `Repeat with Each` item in **Shortcut Input**. Inside the Repeat:
+   1. `Get Name` of *Repeat Item*. Rename **Name**.
+   2. `URL Encode` *Name* (**Encode**). Rename **EncodedName**.
+   3. `Generate Hash`: **SHA256** of *Repeat Item*. Rename **BodyHash**.
+   4. `Dictionary`: `method` = `POST`, `path` = `/v1/items`, `body` = *BodyHash*.
+   5. `Run Shortcut`: **PhoneDrop Sign**, input: the *Dictionary*, **Show While Running** off.
+      Rename **Req**.
+   6. `Get Contents of URL`: URL *Req.url*, **Method** POST, the five headers from §2 step 6
+      (`X-PD-Phone`, `X-PD-Time`, `X-PD-Nonce`, `X-PD-Body`, `X-PD-Sig`), plus one more:
+      `X-PD-Name` = *EncodedName*. **Request Body**: **File**, choose *Repeat Item*.
+      Rename **Result**.
+   7. `If` *Result* **does not contain** `"ok":true`: `Show Alert` "PhoneDrop: *Result*",
+      then `Stop This Shortcut`. **End If**.
+2. **End Repeat**.
+3. `Show Notification`: "Sent to PC" (optional; turn off its sound if you like).
+
+The PC works out what each item is: photos and files are saved (default: Downloads), text is
+copied to the PC's clipboard, and links show an **Open link** button.
+
+> **Videos:** if a video fails with *"produced no file representation"*, add `Encode Media`
+> (**Size**: *Passthrough*) as the first action inside the Repeat, and use its output instead
+> of *Repeat Item* in steps 3 and 6. Passthrough doesn't re-compress, so it's quick.
 
 ## 4. Send Latest Screenshot
 
-*Coming with milestone 3.*
+Create **Send Latest Screenshot**:
+
+1. `Get Latest Screenshots`: **1**.
+2. Steps 1.1 to 1.7 from §3, with *Latest Screenshots* in place of *Repeat Item* (no Repeat
+   is needed for one item). Quickest: duplicate **Send to PC**, delete the Repeat and point the
+   actions at *Latest Screenshots*.
+
+### Making it one gesture
+
+| Trigger | Where to set it |
+|---|---|
+| **Back Tap** (double or triple tap on the back of the phone) | Settings → Accessibility → Touch → Back Tap |
+| **Action Button** (iPhone 15 Pro and later) | Settings → Action Button → Shortcut |
+| **Control Center / Lock Screen** (iOS 18+) | Edit Control Center → Add a Control → Shortcuts |
+| **Siri** | Say the shortcut's name: "Send to PC" |
+| **Share sheet** | Share → **Send to PC** (for *Send to PC* only) |
+
+A good set: Back Tap double → **Send Latest Screenshot**, triple → **Send to PC** (with no
+input it sends the clipboard). If Back Tap is already in use, use a Control Center button.
 
 ## 5. Receive from PC
 
-*Coming with milestone 4.*
+On the PC you queue things for the phone: Explorer → right-click a file → **Send to →
+PhoneDrop**, the panel's **Files…** / **Clipboard** buttons, or **Ctrl+Alt+P** (sends the
+clipboard). The phone collects them when you run **Receive from PC**. Give it a Back Tap or a
+Control Center button too.
+
+Create **Receive from PC**:
+
+1. `Dictionary`: `method` = `GET`, `path` = `/v1/outbox`, `body` = `-` (a single hyphen).
+2. `Run Shortcut`: **PhoneDrop Sign**, input: the *Dictionary*. Rename **Req**.
+3. `Get Contents of URL`: URL *Req.url*, **Method** GET, the five headers from §2 step 6
+   (`X-PD-Body` will be `-`). Rename **List**.
+4. `If` *List* **does not contain** `"ok":true`: `Show Alert` "PhoneDrop: *List*", then
+   `Stop This Shortcut`. **End If**.
+5. `Get Dictionary Value`: **Value** for key `items` in *List*. Rename **Items**.
+6. `Count` *Items*. `If` *Count* **is** `0`: `Show Notification` "Nothing waiting on the PC",
+   `Stop This Shortcut`. **End If**.
+7. `Repeat with Each` item in *Items*. Inside the Repeat:
+   1. `Get Dictionary Value` key `kind` in *Repeat Item*. Rename **Kind**.
+   2. `If` *Kind* **is** `text`: `Copy to Clipboard` *Repeat Item.text*. **End If**.
+   3. `If` *Kind* **is** `url`: `Open URLs` *Repeat Item.text*. **End If**.
+   4. `If` *Kind* **is any of** `image`, `video`, `file` (or three Ifs, one each):
+      1. `Dictionary`: `method` = `GET`, `path` = *Repeat Item.path*, `body` = `-`.
+      2. `Run Shortcut`: **PhoneDrop Sign** with it. Rename **FileReq**.
+      3. `Get Contents of URL`: URL *FileReq.url*, **Method** GET, the five headers from
+         *FileReq*. Rename **Download**.
+      4. `If` *Kind* **is** `file`: `Save File` *Download* (**Ask Where to Save** on).
+         **Otherwise**: `Save to Photo Album` *Download* (Recents). **End If**.
+      **End If**
+8. **End Repeat**.
+9. `Show Notification`: "Received *Count* from the PC".
+
+Text and links leave the PC's outbox as soon as they're listed; files leave once downloaded.
+Anything not collected disappears after 24 hours.
 
 ## 6. Troubleshooting
 

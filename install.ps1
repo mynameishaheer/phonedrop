@@ -1,7 +1,7 @@
 # PhoneDrop installer. Put this next to phonedrop.exe and run it in PowerShell:
 #   powershell -ExecutionPolicy Bypass -File .\install.ps1
 # Installs to %LOCALAPPDATA%\PhoneDrop (no admin needed), starts it at sign-in and adds a Start-menu
-# shortcut. Run it from an *admin* PowerShell to also add the firewall rule (Private networks
+# shortcut and a Send to entry. Run it from an *admin* PowerShell to also add the firewall rule (Private networks
 # only); otherwise Windows asks the first time PhoneDrop starts listening.
 # Rerun to update. Uninstall: .\install.ps1 -Uninstall
 param([switch]$Uninstall)
@@ -10,6 +10,7 @@ $name = 'PhoneDrop'
 $dir = Join-Path $env:LOCALAPPDATA $name
 $exe = Join-Path $dir 'phonedrop.exe'
 $lnk = Join-Path ([Environment]::GetFolderPath('Programs')) 'PhoneDrop.lnk'
+$sendTo = Join-Path ([Environment]::GetFolderPath('SendTo')) 'PhoneDrop (to phone).lnk'
 $run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
     [Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -19,7 +20,7 @@ Get-Process phonedrop -ErrorAction SilentlyContinue | Stop-Process -Force -PassT
 
 if ($Uninstall) {
     Remove-ItemProperty -Path $run -Name $name -ErrorAction SilentlyContinue
-    Remove-Item $lnk -ErrorAction SilentlyContinue
+    Remove-Item $lnk, $sendTo -ErrorAction SilentlyContinue
     if ($admin) { Remove-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue }
     Remove-Item $exe -ErrorAction SilentlyContinue
     Write-Host "Removed PhoneDrop. Settings and paired phones are still in $dir; delete that folder to forget them."
@@ -43,6 +44,12 @@ $sc.TargetPath = $exe
 $sc.WorkingDirectory = $dir
 $sc.IconLocation = "$exe,0"
 $sc.Description = 'Receive files from your iPhone'
+$sc.Save()
+# Explorer: right-click a file > Send to > PhoneDrop queues it for the phone.
+$sc = (New-Object -ComObject WScript.Shell).CreateShortcut($sendTo)
+$sc.TargetPath = $exe
+$sc.IconLocation = "$exe,0"
+$sc.Description = 'Send to your iPhone with PhoneDrop'
 $sc.Save()
 
 if ($admin) {

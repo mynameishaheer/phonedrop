@@ -17,6 +17,8 @@ const (
 type settings struct {
 	SaveDir  string `json:"save_dir"`  // empty: the user's Downloads folder
 	AutoCopy bool   `json:"auto_copy"` // put received text on the clipboard
+	Hotkey   bool   `json:"hotkey"`    // Ctrl+Alt+P sends the clipboard to the phone
+	Encrypt  bool   `json:"encrypt"`   // TLS mode (beta, PROTOCOL.md §7)
 	Port     int    `json:"port"`
 }
 
@@ -30,7 +32,7 @@ func dataDir() string {
 
 func settingsPath() string { return filepath.Join(dataDir(), "settings.json") }
 
-func defaultSettings() settings { return settings{AutoCopy: true, Port: defaultPort} }
+func defaultSettings() settings { return settings{AutoCopy: true, Hotkey: true, Port: defaultPort} }
 
 func loadSettings() settings {
 	s := defaultSettings()

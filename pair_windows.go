@@ -89,9 +89,6 @@ func (u *ui) confirmPairing(ctx context.Context, name string) bool {
 
 func (u *ui) phonesChanged() { postMsg.Call(u.hwnd, wmRefresh, 0, 0) }
 
-// received: milestone 3 shows a toast and records history.
-func (u *ui) received(it receivedItem) {}
-
 // ---------- UI thread ----------
 
 func (u *ui) beginPairing() {

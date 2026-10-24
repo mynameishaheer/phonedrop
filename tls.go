@@ -27,22 +27,22 @@ import (
 )
 
 // Optional TLS, PROTOCOL.md §7. A private CA, name-constrained to this PC's .local name and the
-// private IP ranges, issues an in-memory leaf for the addresses currently bound. The phone gets
-// the CA as a configuration profile (mobileconfig.go). HTTPS shares the plain-HTTP port: the
+// private IP ranges, issues an in-memory leaf for the addresses currently bound. A paired phone
+// downloads the CA as a configuration profile (mobileconfig.go) and checks it against the hash
+// in its QR code. HTTPS shares the plain-HTTP port: the
 // first byte of a connection tells them apart (sniffListener).
 
 const (
-	caValidity    = 10 * 365 * 24 * time.Hour
-	leafValidity  = 397 * 24 * time.Hour
-	leafRenew     = 30 * 24 * time.Hour // re-issue a leaf (or replace the CA) this close to expiry
-	profileWindow = 10 * time.Minute    // the CA profile is served this long after a pairing
-	sniffTimeout  = 10 * time.Second
+	caValidity   = 10 * 365 * 24 * time.Hour
+	leafValidity = 397 * 24 * time.Hour
+	leafRenew    = 30 * 24 * time.Hour // re-issue a leaf (or replace the CA) this close to expiry
+	sniffTimeout = 10 * time.Second
 )
 
-// caIPRanges: what the CA may certify besides the host name. Loopback is there so the server
-// works (and is testable) on 127.0.0.1; a phone's loopback never leaves the phone.
+// caIPRanges: the addresses a new CA may certify besides the host name. A variable only so the
+// tests can add loopback; production CAs permit exactly these.
 var caIPRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16",
-	"127.0.0.0/8", "fc00::/7", "fe80::/10"}
+	"fc00::/7", "fe80::/10"}
 
 func tlsDir() string { return filepath.Join(dataDir(), "tls") }
 
@@ -59,11 +59,10 @@ type tlsManager struct {
 	enabled atomic.Bool
 	leaf    atomic.Pointer[tls.Certificate]
 
-	mu           sync.Mutex
-	ca           *x509.Certificate
-	caKey        *ecdsa.PrivateKey
-	addrs        []netip.Addr // bound addresses (sorted), the leaf's IP SANs
-	profileUntil time.Time
+	mu    sync.Mutex
+	ca    *x509.Certificate
+	caKey *ecdsa.PrivateKey
+	addrs []netip.Addr // bound addresses (sorted), the leaf's IP SANs
 }
 
 func newTLSManager() *tlsManager {
@@ -91,25 +90,11 @@ func (s *server) caFingerprint() string { return s.tlsm.fingerprint() }
 // the new profile.
 func (s *server) resetTLS() error { return s.tlsm.reset() }
 
-// openProfileWindow lets GET /v1/ca.mobileconfig answer for d (only while TLS is on).
-func (s *server) openProfileWindow(d time.Duration) {
-	s.tlsm.mu.Lock()
-	s.tlsm.profileUntil = s.now().Add(d)
-	s.tlsm.mu.Unlock()
-}
-
-func (s *server) closeProfileWindow() {
-	s.tlsm.mu.Lock()
-	s.tlsm.profileUntil = time.Time{}
-	s.tlsm.mu.Unlock()
-}
-
 func (m *tlsManager) setEnabled(on bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if !on { // the CA key needn't stay in memory; turning TLS on again reloads it
 		m.enabled.Store(false)
-		m.profileUntil = time.Time{}
 		m.ca, m.caKey = nil, nil
 		m.leaf.Store(nil)
 		log.Printf("tls: off")
@@ -200,11 +185,11 @@ func (m *tlsManager) fresh(c *tls.Certificate) bool {
 	return m.now().Before(c.Leaf.NotAfter.Add(-leafRenew))
 }
 
-// profileCA: the CA's DER and host while the profile may be served.
-func (m *tlsManager) profileCA(now time.Time) (der []byte, host string, ok bool) {
+// profileCA: the CA's DER and host, while TLS is on.
+func (m *tlsManager) profileCA() (der []byte, host string, ok bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if !m.enabled.Load() || m.ca == nil || !now.Before(m.profileUntil) {
+	if !m.enabled.Load() || m.ca == nil {
 		return nil, "", false
 	}
 	return m.ca.Raw, caHost(m.ca), true
@@ -238,7 +223,7 @@ func (m *tlsManager) loadOrCreateLocked() error {
 	default:
 		log.Printf("tls: stored CA unusable (%v); making a new one", err)
 	}
-	ca, key, err = newCA(m.host, m.now())
+	ca, key, err = newCA(m.host, m.now(), caIPRanges)
 	if err != nil {
 		return err
 	}
@@ -341,14 +326,17 @@ func randSerial() *big.Int {
 
 // newCA: self-signed, path length 0, and critically name-constrained, so even a stolen key can
 // only vouch for this PC's name and LAN addresses.
-func newCA(host string, now time.Time) (*x509.Certificate, *ecdsa.PrivateKey, error) {
+func newCA(host string, now time.Time, ipRanges []string) (*x509.Certificate, *ecdsa.PrivateKey, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, nil, err
 	}
 	var ranges []*net.IPNet
-	for _, r := range caIPRanges {
-		_, n, _ := net.ParseCIDR(r)
+	for _, r := range ipRanges {
+		_, n, err := net.ParseCIDR(r)
+		if err != nil {
+			return nil, nil, err
+		}
 		ranges = append(ranges, n)
 	}
 	tmpl := &x509.Certificate{
@@ -415,7 +403,8 @@ func (m *tlsManager) issueLocked() error {
 }
 
 // httpsOnly applies §7 after a request is authenticated: an HTTPS request marks the phone, and a
-// marked phone's plain-HTTP requests are refused while TLS is on. It reports whether to go on.
+// marked phone's plain-HTTP requests are refused while TLS is on, except the CA profile (after a
+// reset the phone can't do HTTPS until it has the new one). It reports whether to go on.
 func (s *server) httpsOnly(w http.ResponseWriter, r *http.Request, id string) bool {
 	p, ok := s.phones.get(id)
 	if !ok {
@@ -427,7 +416,7 @@ func (s *server) httpsOnly(w http.ResponseWriter, r *http.Request, id string) bo
 		}
 		return true
 	}
-	if p.TLS && s.tlsEnabled() {
+	if p.TLS && s.tlsEnabled() && r.URL.Path != caProfilePath {
 		w.Header().Set("Connection", "close")
 		replyErr(w, http.StatusForbidden, "use https")
 		return false

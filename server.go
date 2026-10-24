@@ -157,10 +157,6 @@ func (s *server) handle(w http.ResponseWriter, r *http.Request) {
 		s.handlePair(w, r)
 		return
 	}
-	if r.URL.Path == caProfilePath {
-		s.handleProfile(w, r)
-		return
-	}
 	a, ok := s.auth.verify(r, s.phones.secretFor)
 	if !ok {
 		s.unauthorized(w, r)
@@ -203,6 +199,8 @@ func (s *server) handle(w http.ResponseWriter, r *http.Request) {
 		s.handleItem(w, r, a, ph.Name)
 	case p == "/v1/outbox" || strings.HasPrefix(p, "/v1/outbox/"): // milestone 4
 		s.handleOutbox(w, r, a)
+	case p == caProfilePath:
+		s.handleProfile(w, r, a)
 	default:
 		w.Header().Set("Connection", "close")
 		replyErr(w, http.StatusNotFound, "not found")

@@ -5,10 +5,13 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -28,6 +31,41 @@ import (
 )
 
 const testHost = "testpc.local"
+
+// prodCAIPRanges: the production list, captured before init adds loopback for the tests (package
+// variables are initialised before init runs).
+var prodCAIPRanges = slices.Clone(caIPRanges)
+
+func init() { caIPRanges = append(slices.Clone(caIPRanges), "127.0.0.0/8") }
+
+func TestProductionCARanges(t *testing.T) {
+	want := []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "fc00::/7", "fe80::/10"}
+	if !slices.Equal(prodCAIPRanges, want) {
+		t.Fatalf("production ranges %v", prodCAIPRanges)
+	}
+	ca, key, err := newCA(testHost, time.Now(), prodCAIPRanges)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, n := range ca.PermittedIPRanges {
+		got = append(got, n.String())
+	}
+	if !slices.Equal(got, want) || !ca.PermittedDNSDomainsCritical {
+		t.Fatalf("CA permits %v", got)
+	}
+	m := testTLSManager(t, t.TempDir())
+	m.ca, m.caKey = ca, key
+	m.setAddrs([]netip.Addr{netip.MustParseAddr("127.0.0.1")})
+	if err := m.issueLocked(); err != nil {
+		t.Fatal(err)
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(ca)
+	if _, err := m.leaf.Load().Leaf.Verify(x509.VerifyOptions{Roots: roots, DNSName: "127.0.0.1"}); !verifyErrIsConstraint(err) {
+		t.Fatalf("production CA certified loopback: %v", err)
+	}
+}
 
 // testTLSManager: a manager on a temp dir with fake DPAPI, not yet enabled.
 func testTLSManager(t *testing.T, dir string) *tlsManager {
@@ -436,32 +474,55 @@ func plist(t *testing.T, b []byte) map[string]any {
 	}
 }
 
-func getProfile(t *testing.T, ts *testServer) (*http.Response, []byte) {
+// fetchProfile downloads the CA profile with a signed request, keeping the exact bytes.
+func fetchProfile(t *testing.T, c *phoneClient, hc *http.Client, base, method string) (int, http.Header, []byte) {
 	t.Helper()
-	res, err := http.Get(ts.base + caProfilePath)
+	c.n++
+	tsv := c.ts.time().Format(time.RFC3339)
+	r := signedReq(method, caProfilePath, c.id, c.secret, tsv, fmt.Sprintf("prof-%d-%d", c.n, time.Now().UnixNano()), nil)
+	req, _ := http.NewRequest(method, base+caProfilePath, nil)
+	req.Header = r.Header
+	res, err := hc.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer res.Body.Close()
 	b, _ := io.ReadAll(res.Body)
-	return res, b
+	return res.StatusCode, res.Header, b
 }
 
 func TestProfile(t *testing.T) {
 	ts := newTestServer(t, nil)
 	ts.tlsm.dir, ts.tlsm.protect, ts.tlsm.unprotect, ts.tlsm.host = t.TempDir(), xorProtect, xorProtect, testHost
 	ts.laptop = `Shaheer's <PC> & "Co"`
+	c := &phoneClient{ts: ts, id: "0123456789abcdef", secret: secretA}
+	ts.phones.add(c.id, c.secret, "P")
+	plain := &http.Client{Timeout: 5 * time.Second}
+
+	if code, _, b := fetchProfile(t, c, plain, ts.base, "GET"); code != 404 || strings.TrimSpace(string(b)) != `{"ok":false,"error":"encryption is off"}` {
+		t.Fatalf("TLS off: %d %s", code, b)
+	}
 	if err := ts.setTLS(true); err != nil {
 		t.Fatal(err)
 	}
-	if res, _ := getProfile(t, ts); res.StatusCode != 401 {
-		t.Fatalf("window closed: %d", res.StatusCode)
+	// No unauthenticated path: unsigned, or signed by an unknown phone, is the usual 401.
+	res, err := plain.Get(ts.base + caProfilePath)
+	if err != nil {
+		t.Fatal(err)
 	}
-	ts.openProfileWindow(time.Minute)
-	res, body := getProfile(t, ts)
-	if res.StatusCode != 200 || res.Header.Get("Content-Type") != "application/x-apple-aspen-config" ||
-		res.Header.Get("Content-Disposition") != `attachment; filename="PhoneDrop.mobileconfig"` {
-		t.Fatalf("profile: %d %v", res.StatusCode, res.Header)
+	res.Body.Close()
+	stranger := &phoneClient{ts: ts, id: "fedcba9876543210", secret: secretB}
+	if code, _, _ := fetchProfile(t, stranger, plain, ts.base, "GET"); res.StatusCode != 401 || code != 401 {
+		t.Fatalf("unauthenticated: %d, unknown phone: %d", res.StatusCode, code)
+	}
+	if code, _, _ := fetchProfile(t, c, plain, ts.base, "POST"); code != 405 {
+		t.Fatalf("POST: %d", code)
+	}
+
+	code, hdr, body := fetchProfile(t, c, plain, ts.base, "GET")
+	if code != 200 || hdr.Get("Content-Type") != "application/x-apple-aspen-config" ||
+		hdr.Get("Content-Disposition") != `attachment; filename="PhoneDrop.mobileconfig"` {
+		t.Fatalf("profile: %d %v", code, hdr)
 	}
 	p := plist(t, body)
 	uuid := regexp.MustCompile(`^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$`)
@@ -480,42 +541,58 @@ func TestProfile(t *testing.T) {
 	if der, _ := inner["PayloadContent"].([]byte); !bytes.Equal(der, ts.tlsm.caCert().Raw) {
 		t.Fatal("profile doesn't hold the CA")
 	}
-	ts.advance(2 * time.Minute)
-	if res, _ := getProfile(t, ts); res.StatusCode != 401 {
-		t.Fatalf("after the window: %d", res.StatusCode)
+	// Deterministic: the same CA gives the same bytes, and the hash the QR code carries.
+	_, _, again := fetchProfile(t, c, plain, ts.base, "GET")
+	if h := sha256.Sum256(body); !bytes.Equal(again, body) || hex.EncodeToString(h[:]) != ts.caProfileHash() {
+		t.Fatal("profile isn't deterministic")
 	}
-	ts.openProfileWindow(time.Minute)
+	// A new CA gives a different profile, with different UUIDs.
+	ts.resetTLS()
+	_, _, fresh := fetchProfile(t, c, plain, ts.base, "GET")
+	if p2 := plist(t, fresh); bytes.Equal(fresh, body) || p2["PayloadUUID"] == p["PayloadUUID"] {
+		t.Fatal("reset CA gave the same profile")
+	}
+	// Exempt from HTTPS-only: a phone that has used HTTPS can still fetch it over plain HTTP.
+	ts.phones.setTLS(c.id)
+	if r := c.via(t, plain, ts.base, "GET", "/v1/ping", nil); r.code != 403 {
+		t.Fatalf("plain ping from an HTTPS phone: %+v", r)
+	}
+	if code, _, _ := fetchProfile(t, c, plain, ts.base, "GET"); code != 200 {
+		t.Fatalf("plain profile from an HTTPS phone: %d", code)
+	}
+	if code, _, _ := fetchProfile(t, c, httpsClient(ts.tlsm.caCert(), ""), httpsBase(ts, "127.0.0.1"), "GET"); code != 200 {
+		t.Fatalf("profile over HTTPS: %d", code)
+	}
 	ts.setTLS(false)
-	if res, _ := getProfile(t, ts); res.StatusCode != 401 {
-		t.Fatalf("after turning TLS off: %d", res.StatusCode)
-	}
-	ts.openProfileWindow(time.Minute)
-	if res, _ := getProfile(t, ts); res.StatusCode != 401 {
-		t.Fatalf("window open, TLS off: %d", res.StatusCode)
+	if code, _, _ := fetchProfile(t, c, plain, ts.base, "GET"); code != 404 {
+		t.Fatalf("after turning TLS off: %d", code)
 	}
 }
 
-func TestPairingOpensProfileWindow(t *testing.T) {
-	h := newFakeHooks()
-	ts := newTestServer(t, h)
-	ts.tlsm.dir, ts.tlsm.protect, ts.tlsm.unprotect, ts.tlsm.host = t.TempDir(), xorProtect, xorProtect, testHost
-	if err := ts.setTLS(true); err != nil {
-		t.Fatal(err)
+func TestQRCarriesProfileHash(t *testing.T) {
+	ts, c := newTLSTestServer(t, newFakeHooks())
+	qr, _ := ts.startPairing(pairingInfo{})
+	var keys []string
+	dec := json.NewDecoder(strings.NewReader(qr))
+	dec.Token()
+	for dec.More() {
+		k, _ := dec.Token()
+		keys = append(keys, k.(string))
+		var v json.RawMessage
+		dec.Decode(&v)
 	}
-	c := pairClient(t, ts)
-	done := c.pairAsync(t, []byte("Phone"))
-	<-h.asked
-	h.answer <- true
-	if r := <-done; r.code != 200 {
-		t.Fatalf("pair %+v", r)
+	if got := strings.Join(keys, ","); got != "pd,name,host,ips,port,id,secret,tls,ca" {
+		t.Fatalf("key order %s", got)
 	}
-	<-h.changed
-	if res, _ := getProfile(t, ts); res.StatusCode != 200 {
-		t.Fatalf("profile after pairing: %d", res.StatusCode)
+	var q qrPayload
+	json.Unmarshal([]byte(qr), &q)
+	_, _, prof := fetchProfile(t, c, &http.Client{Timeout: 5 * time.Second}, ts.base, "GET")
+	if h := sha256.Sum256(prof); !q.TLS || q.CA != hex.EncodeToString(h[:]) {
+		t.Fatalf("QR tls=%v ca=%s doesn't match the profile", q.TLS, q.CA)
 	}
-	ts.advance(profileWindow + time.Second)
-	if res, _ := getProfile(t, ts); res.StatusCode != 401 {
-		t.Fatalf("profile after the window: %d", res.StatusCode)
+	ts.setTLS(false)
+	if qr, _ := ts.startPairing(pairingInfo{}); strings.Contains(qr, `"tls"`) || strings.Contains(qr, `"ca"`) {
+		t.Fatalf("TLS off but QR has tls fields: %s", qr)
 	}
 }
 

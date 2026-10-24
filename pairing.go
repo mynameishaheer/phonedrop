@@ -54,6 +54,8 @@ type qrPayload struct {
 	Port   int      `json:"port"`
 	ID     string   `json:"id"`
 	Secret string   `json:"secret"`
+	TLS    bool     `json:"tls,omitempty"` // only when TLS is on (§7)
+	CA     string   `json:"ca,omitempty"`  // hex SHA-256 of the CA profile, with tls
 }
 
 func randHex(n int) string {
@@ -96,7 +98,11 @@ func (s *server) startPairing(info pairingInfo) (qrJSON string, expires time.Tim
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
-	enc.Encode(qrPayload{PD: 1, Name: info.Name, Host: info.Host, IPs: ips, Port: s.port, ID: p.id, Secret: p.secret})
+	q := qrPayload{PD: 1, Name: info.Name, Host: info.Host, IPs: ips, Port: s.port, ID: p.id, Secret: p.secret}
+	if h := s.caProfileHash(); h != "" {
+		q.TLS, q.CA = true, h
+	}
+	enc.Encode(q)
 
 	s.pairMu.Lock()
 	s.pending = p
@@ -213,9 +219,6 @@ func (s *server) handlePair(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("pairing: phone %s paired", a.id)
 	s.hooks.phonesChanged()
-	if s.tlsEnabled() {
-		s.openProfileWindow(profileWindow) // the Setup shortcut fetches the CA next
-	}
 	reply(w, http.StatusOK, struct {
 		OK     bool   `json:"ok"`
 		Laptop string `json:"laptop"`

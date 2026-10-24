@@ -2,45 +2,81 @@ package main
 
 import (
 	"bytes"
-	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/xml"
 	"fmt"
 	"log"
 	"net/http"
 )
 
-// GET /v1/ca.mobileconfig (§7): the CA as an unsigned iOS configuration profile. It is the only
-// unauthenticated endpoint, and it answers only while TLS is on and the profile window is open;
-// otherwise it is the same 401 as everything else.
+// GET /v1/ca.mobileconfig (§7): the CA as an unsigned iOS configuration profile, for a paired
+// phone's signed request. The profile is byte-for-byte deterministic for a CA and laptop name,
+// so the QR code can carry its SHA-256 ("ca") and the phone can check what it downloaded: a
+// profile swapped on the way (pairing and this download may be plain HTTP) doesn't match.
 
 const caProfilePath = "/v1/ca.mobileconfig"
 
-func (s *server) handleProfile(w http.ResponseWriter, r *http.Request) {
-	der, host, ok := s.tlsm.profileCA(s.now())
-	if !ok || r.Method != http.MethodGet {
-		s.unauthorized(w, r)
+// handleProfile serves the profile. Exempt from the HTTPS-only rule (httpsOnly), so a phone can
+// fetch a new CA's profile after a reset.
+func (s *server) handleProfile(w http.ResponseWriter, r *http.Request, a authResult) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if err := checkBodyLen(r, a.body, maxPairBody); err != nil {
+		bodyError(w, err)
+		return
+	}
+	if _, err := readBody(r.Body, a.body, maxPairBody); err != nil {
+		bodyError(w, err)
+		return
+	}
+	prof, ok := s.caProfile()
+	if !ok {
+		replyErr(w, http.StatusNotFound, "encryption is off")
 		return
 	}
 	w.Header().Set("Content-Type", "application/x-apple-aspen-config")
 	w.Header().Set("Content-Disposition", `attachment; filename="PhoneDrop.mobileconfig"`)
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Connection", "close")
-	w.Write(caProfile(der, host, s.laptop))
-	log.Printf("tls: CA profile served")
+	w.Write(prof)
+	log.Printf("tls: CA profile sent to phone %s", a.id)
 }
 
-// uuid4: a random RFC 4122 version 4 UUID, upper case as Apple writes them.
-func uuid4() string {
-	var b [16]byte
-	rand.Read(b[:])
-	b[6] = b[6]&0x0f | 0x40
-	b[8] = b[8]&0x3f | 0x80
-	return fmt.Sprintf("%X-%X-%X-%X-%X", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+// caProfile: the current profile, if TLS is on.
+func (s *server) caProfile() ([]byte, bool) {
+	der, host, ok := s.tlsm.profileCA()
+	if !ok {
+		return nil, false
+	}
+	return caProfile(der, host, s.laptop), true
 }
 
-// caProfile builds the plist: one com.apple.security.root payload holding the CA's DER.
+// caProfileHash: hex SHA-256 of the exact profile bytes (the QR code's "ca"); "" if TLS is off.
+func (s *server) caProfileHash() string {
+	prof, ok := s.caProfile()
+	if !ok {
+		return ""
+	}
+	h := sha256.Sum256(prof)
+	return hex.EncodeToString(h[:])
+}
+
+// uuidFrom formats 16 bytes as a version 4 style UUID, upper case as Apple writes them.
+func uuidFrom(b []byte) string {
+	var u [16]byte
+	copy(u[:], b)
+	u[6] = u[6]&0x0f | 0x40
+	u[8] = u[8]&0x3f | 0x80
+	return fmt.Sprintf("%X-%X-%X-%X-%X", u[0:4], u[4:6], u[6:8], u[8:10], u[10:16])
+}
+
+// caProfile builds the plist: one com.apple.security.root payload holding the CA's DER. Nothing
+// in it is random: both UUIDs come from the CA's hash.
 func caProfile(caDER []byte, host, laptop string) []byte {
+	sum := sha256.Sum256(caDER)
 	var b bytes.Buffer
 	str := func(key, val string) {
 		b.WriteString("\t<key>" + key + "</key>\n\t<string>")
@@ -61,7 +97,7 @@ func caProfile(caDER []byte, host, laptop string) []byte {
 	str("PayloadDisplayName", "PhoneDrop CA ("+host+")")
 	str("PayloadIdentifier", "app.phonedrop.ca."+host+".root")
 	str("PayloadType", "com.apple.security.root")
-	str("PayloadUUID", uuid4())
+	str("PayloadUUID", uuidFrom(sum[16:]))
 	b.WriteString("\t<key>PayloadVersion</key>\n\t<integer>1</integer>\n\t</dict>\n\t</array>\n")
 	str("PayloadDescription", "Lets this iPhone verify that it is really talking to PhoneDrop on "+laptop+
 		" when sending over encrypted connections. The certificate can only vouch for "+host+
@@ -70,7 +106,7 @@ func caProfile(caDER []byte, host, laptop string) []byte {
 	str("PayloadIdentifier", "app.phonedrop.ca."+host)
 	str("PayloadOrganization", "PhoneDrop")
 	str("PayloadType", "Configuration")
-	str("PayloadUUID", uuid4())
+	str("PayloadUUID", uuidFrom(sum[:16]))
 	b.WriteString("\t<key>PayloadVersion</key>\n\t<integer>1</integer>\n</dict>\n</plist>\n")
 	return b.Bytes()
 }

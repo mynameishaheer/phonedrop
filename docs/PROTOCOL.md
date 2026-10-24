@@ -37,6 +37,8 @@ this JSON (UTF-8, byte mode):
 | `port` | listening port |
 | `id` | the **phone id** this QR code creates: 16 hex chars (64 random bits) |
 | `secret` | the **phone secret**: 64 hex chars (256 random bits) |
+| `tls` | only while encryption is on (§7): `true` |
+| `ca` | only with `tls`: hex SHA-256 of the exact bytes of `GET /v1/ca.mobileconfig` |
 
 The secret travels only inside the QR code, never over the network. Each QR code is single use:
 the pending pairing is discarded after one pairing attempt (allowed, denied or timed out), when
@@ -166,15 +168,19 @@ When the user turns on **Encrypt transfers** on the laptop:
 
 - The laptop creates a private CA (ECDSA P-256, its key DPAPI-protected) with **X.509 name
   constraints**: it may only certify `<host>` (the `.local` name) and the private IP ranges
-  (plus loopback). A leaf certificate for `<host>` and the current IPs is re-issued whenever the
-  IPs change. TLS 1.2 or later.
-- For 10 minutes after a successful pairing (or while the *Set up encryption* window is open),
-  `GET /v1/ca.mobileconfig` (unauthenticated) serves the CA as an iOS configuration profile
-  (`application/x-apple-aspen-config`); at any other time it is the usual `401`. The user
-  installs it and turns on full trust (Settings → General → About → Certificate Trust Settings).
+  (10/8, 172.16/12, 192.168/16, 169.254/16, fc00::/7, fe80::/10). A leaf certificate for
+  `<host>` and the current IPs is re-issued whenever the IPs change. TLS 1.2 or later.
+- `GET /v1/ca.mobileconfig`, signed by a paired phone like any request (`X-PD-Body: -`), returns
+  the CA as an iOS configuration profile (`application/x-apple-aspen-config`), or
+  `404 {"ok":false,"error":"encryption is off"}`. There is no unauthenticated endpoint. The
+  profile is deterministic for a given CA and laptop name, so the phone checks the SHA-256 of the
+  downloaded bytes against the QR code's `ca` (§2) before opening it; that catches a profile
+  swapped in transit, since pairing and this download may be plain HTTP. The user then installs
+  it and turns on full trust (Settings → General → About → Certificate Trust Settings).
 - The phone's config then uses `https://`. Once a phone has made one signed HTTPS request, the
   laptop refuses that phone's plain-HTTP requests (`403 {"ok":false,"error":"use https"}`) while
-  encryption is on. Turning it off accepts plain HTTP from every phone again.
+  encryption is on. Turning it off accepts plain HTTP from every phone again. The profile
+  download is exempt, so a phone can fetch a new CA (after a reset or a rename) over plain HTTP.
 
 Name constraints are what make installing the CA safe: without them, a stolen CA key could
 impersonate any website to that phone. **Check on a real iPhone that iOS enforces them before

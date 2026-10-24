@@ -253,6 +253,16 @@ func (c *canvas) stroke(r rectF, rad, w float32, col uint32) {
 	gp("GdipDeletePath", p)
 }
 
+// rects fills many axis-aligned rectangles in one call, without anti-aliasing (QR modules).
+func (c *canvas) rects(rs []rectF, col uint32) {
+	if len(rs) == 0 {
+		return
+	}
+	gp("GdipSetSmoothingMode", c.g, 3) // None: neighbours must not leave seams
+	withBrush(col, func(b uintptr) { gp("GdipFillRectangles", c.g, b, uintptr(unsafe.Pointer(&rs[0])), uintptr(len(rs))) })
+	gp("GdipSetSmoothingMode", c.g, 4)
+}
+
 func (c *canvas) circle(cx, cy, rad float32, col uint32) {
 	withBrush(col, func(b uintptr) { gp("GdipFillEllipse", c.g, b, fl(cx-rad), fl(cy-rad), fl(2*rad), fl(2*rad)) })
 }

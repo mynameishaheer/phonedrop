@@ -91,8 +91,10 @@ Authenticated responses are JSON with `Content-Type: application/json`:
 
 ### `POST /v1/pair`: finish pairing
 
-Signed with the pending pairing's id and secret from the QR code. Body (JSON, ≤ 4 KB):
-`{"name": "Shaheer's iPhone"}`.
+Signed with the pending pairing's id and secret from the QR code. Body (≤ 4 KB): the phone's
+name as plain UTF-8 text (`Shaheer's iPhone`), or JSON `{"name": "Shaheer's iPhone"}` if it
+starts with `{`. Plain text is what the Setup shortcut sends, since building JSON by
+concatenation breaks on names with quotes.
 
 The laptop shows **Allow "Shaheer's iPhone" to send to this PC?** with Allow / Deny and holds
 the request open until the user answers (at most 50 s).
@@ -114,9 +116,14 @@ One item per request; the body is the raw item.
 | `X-PD-Name` | optional. File name, percent-encoded (Shortcuts' *URL Encode*). Omit for text and links. |
 | `X-PD-Kind` | optional. `file`, `text` or `url`. Inferred when absent (below). |
 
-Inference when `X-PD-Kind` is absent: with a name, it's a `file`. Without a name, a body of at
-most 1 MB that is valid UTF-8 is `text`, or a `url` if it's a single `http(s)://` link; anything
-else is a `file`, named from its content type (`Received 2026-10-24 22.15.24.jpg`).
+Inference when `X-PD-Kind` is absent, chosen so a shortcut can send every share-sheet item the
+same way (Shortcuts names a text item something like `Text`, with no extension):
+
+1. A name with a file extension: a `file`.
+2. Otherwise a body of at most 1 MB that is valid UTF-8: `text`, or a `url` if the whole body
+   is a single `http(s)://` link.
+3. Otherwise a `file`. A missing extension comes from the content's magic bytes (`IMG_2041` →
+   `IMG_2041.heic`), and a missing name becomes `Received 2026-10-24 22.15.24.<ext>`.
 
 - Files are saved to the chosen folder (default Downloads) with a sanitized, de-duplicated name
   and the Mark-of-the-Web (`Zone.Identifier`, `ZoneId=3`). A name without an extension gets one

@@ -50,7 +50,7 @@ type ui struct {
 
 	cv             *canvas
 	visible        bool
-	view           string // "main" | "settings"
+	view           string // "main" | "settings" | "pair" | "confirm"
 	hits           []hit
 	hover, press   string
 	tracking       bool
@@ -64,6 +64,14 @@ type ui struct {
 	quitAt         time.Time // first click on the footer's quit button (second within 3 s quits)
 	startAtLogin   bool
 	recheck        chan struct{}
+	toast          toaster
+	app            backend
+	phones         []phoneView
+	qr             [][]bool // the pairing code on screen
+	pairExpires    time.Time
+	confirm        *confirmReq // the request the prompt is showing
+	removeID       string      // phone whose bin was clicked once (a second click removes it)
+	removeAt       time.Time
 
 	mu         sync.Mutex // guards the fields below (written by the watcher and server goroutines)
 	net        netState
@@ -72,6 +80,7 @@ type ui struct {
 	listenErr  string
 	flash      string
 	flashUntil time.Time
+	pending    *confirmReq // a pairing request waiting for an answer
 }
 
 var theUI *ui
@@ -187,7 +196,7 @@ func (u *ui) trayTip() string {
 // ---------- drawing ----------
 
 func (u *ui) mainHeight() float32 {
-	return pad + statusH + labelH + rowH + pad + footerH
+	return pad + statusH + labelH + u.phonesHeight() + pad + footerH
 }
 
 func (u *ui) settingsHeight() float32 {
@@ -195,8 +204,13 @@ func (u *ui) settingsHeight() float32 {
 }
 
 func (u *ui) height() float32 {
-	if u.view == "settings" {
+	switch u.view {
+	case "settings":
 		return u.settingsHeight()
+	case "pair":
+		return u.pairHeight()
+	case "confirm":
+		return u.confirmHeight()
 	}
 	return u.mainHeight()
 }
@@ -231,9 +245,14 @@ func (u *ui) render(c *canvas) {
 	panel := rectF{sh, sh, panelW, u.height()}
 	u.shadow(c, panel, 0.42)
 	c.fill(panel, radius, u.th.bg)
-	if u.view == "settings" {
+	switch u.view {
+	case "settings":
 		u.drawSettings(c, panel)
-	} else {
+	case "pair":
+		u.drawPair(c, panel)
+	case "confirm":
+		u.drawConfirm(c, panel)
+	default:
 		u.drawMain(c, panel, s)
 	}
 	c.stroke(panel, radius, 1, u.th.border)
@@ -293,14 +312,7 @@ func (u *ui) drawMain(c *canvas, p rectF, s snap) {
 	// Phones.
 	c.text("Phones", fontSmallSemi, rectF{x + 2, y + 10, w, labelH - 10}, t.text2, 0, 1)
 	y += labelH
-	r = rectF{x, y, w, rowH}
-	u.drawCard(c, r, t.card)
-	c.circle(r.X+30, r.Y+rowH/2, 16, t.chip)
-	c.icon(icPhoneAdd, false, fontIcon, 20, rectF{r.X + 14, r.Y + rowH/2 - 16, 32, 32}, t.text)
-	bw := c.measure("Pair", fontText) + 32
-	c.text("No phones paired yet", fontText, rectF{r.X + 58, r.Y + 13, r.W - 58 - bw - 24, 20}, t.text, 0, 1)
-	c.text("Scan a QR code with your iPhone", fontSmall, rectF{r.X + 58, r.Y + 33, r.W - 58 - bw - 24, 18}, t.text2, 0, 1)
-	u.accentButton(c, rectF{r.X + r.W - 14 - bw, r.Y + (rowH-32)/2, bw, 32}, "Pair", "btn:pair")
+	u.drawPhones(c, x, y, w)
 
 	// Footer: where files go, plus folder, settings and quit buttons.
 	fy := p.Y + p.H - footerH
@@ -542,6 +554,7 @@ func (u *ui) position(anchor rect, w, h float32) {
 func (u *ui) show(view string) {
 	u.th = loadTheme()
 	u.startAtLogin = runAtLogin()
+	u.refreshPhones()
 	u.view, u.hover, u.press, u.hiding = view, "", "", false
 	u.position(u.trayRect(), panelW, u.height())
 	u.visible = true
@@ -562,7 +575,11 @@ func (u *ui) hide() {
 	if !u.visible || u.hiding {
 		return
 	}
+	if u.view == "confirm" { // closing the prompt is a no
+		u.answer(false)
+	}
 	u.hiding, u.animStart, u.hiddenAt = true, time.Now(), time.Now()
+	u.endPairing("")
 	win(user32, "ReleaseCapture")
 	win(user32, "SetTimer", u.hwnd, tAnim, 10, 0)
 }
@@ -586,8 +603,18 @@ func (u *ui) click(id string) {
 		u.relayout()
 		return
 	case "btn:back":
+		if u.view == "pair" {
+			u.endPairing("")
+			return
+		}
 		u.view, u.hover = "main", ""
 		u.relayout()
+		return
+	case "btn:allow", "btn:deny":
+		u.answer(id == "btn:allow")
+		return
+	case "btn:docs":
+		shellOpen(docsURL)
 		return
 	case "btn:folder":
 		os.MkdirAll(u.set.saveDir(), 0o755)
@@ -599,7 +626,8 @@ func (u *ui) click(id string) {
 		u.hide()
 		return
 	case "btn:pair":
-		u.flashMsg("Pairing arrives in the next build")
+		u.beginPairing()
+		return
 	case "btn:savedir":
 		u.hide()
 		if dir, ok := pickFolder(u.set.saveDir()); ok {
@@ -614,6 +642,11 @@ func (u *ui) click(id string) {
 	case "sw:login":
 		if exe, err := os.Executable(); err == nil && setRunAtLogin(!u.startAtLogin, exe) {
 			u.startAtLogin = !u.startAtLogin
+		}
+	default:
+		if strings.HasPrefix(id, "rm:") {
+			u.remove(id[3:])
+			return
 		}
 	}
 	u.paint()
@@ -665,6 +698,12 @@ func wcslen(p *uint16) int {
 	for s := unsafe.Pointer(p); *(*uint16)(unsafe.Add(s, 2*n)) != 0; n++ {
 	}
 	return n
+}
+
+func (u *ui) refreshPhones() {
+	if u.app != nil {
+		u.phones = u.app.phoneList()
+	}
 }
 
 func (u *ui) addTray(modify bool) {
@@ -773,6 +812,9 @@ func lparamXY(l uintptr, scale float32) (float32, float32) {
 
 func uiProc(hwnd, m, wParam, lParam uintptr) uintptr {
 	u := theUI
+	if hwnd == u.toast.hwnd && hwnd != 0 {
+		return toastProc(u, hwnd, m, wParam, lParam)
+	}
 	switch m {
 	case wmTray:
 		switch lParam & 0xFFFF {
@@ -789,8 +831,19 @@ func uiProc(hwnd, m, wParam, lParam uintptr) uintptr {
 	case wmRefresh:
 		u.addTray(true) // the tooltip follows the status
 		if u.visible && !u.hiding {
-			u.paint()
+			if u.view == "main" {
+				u.refreshPhones()
+				u.relayout() // the phone count can change the height
+			} else {
+				u.paint()
+			}
 		}
+		return 0
+	case wmConfirm:
+		u.askConfirm()
+		return 0
+	case wmConfirmGone:
+		u.confirmGone()
 		return 0
 	case 0x0113: // WM_TIMER
 		switch wParam {
@@ -809,11 +862,13 @@ func uiProc(hwnd, m, wParam, lParam uintptr) uintptr {
 		case tFlash:
 			win(user32, "KillTimer", hwnd, tFlash)
 			u.paint()
+		case tTick:
+			u.tick()
 		}
 		return 0
 	case 0x0006: // WM_ACTIVATE
-		if wParam&0xFFFF == 0 {
-			u.hide()
+		if wParam&0xFFFF == 0 && u.view != "pair" && u.view != "confirm" {
+			u.hide() // (the QR code and the prompt stay up while you reach for the phone)
 		}
 		return 0
 	case 0x0200: // WM_MOUSEMOVE
@@ -857,9 +912,12 @@ func uiProc(hwnd, m, wParam, lParam uintptr) uintptr {
 		return 0
 	case 0x0100, 0x0104: // WM_KEYDOWN, WM_SYSKEYDOWN
 		if wParam == 0x1B { // Esc
-			if u.view == "settings" {
+			switch u.view {
+			case "settings", "pair":
 				u.click("btn:back")
-			} else {
+			case "confirm":
+				u.answer(false)
+			default:
 				u.hide()
 			}
 		}
@@ -887,13 +945,17 @@ func runUI(u *ui) {
 	inst, _, _ := getModule.Call(0)
 	proc := syscall.NewCallback(uiProc)
 	cursor := win(user32, "LoadCursorW", 0, 32512) // IDC_ARROW
-	wc := wndClassEx{wndProc: proc, instance: inst, cursor: cursor, className: wstr("PhoneDropPanel")}
-	wc.size = uint32(unsafe.Sizeof(wc))
-	registerCls.Call(ptr(&wc))
-	const exLayered, exTool, exTopmost = 0x80000, 0x80, 0x8
+	for _, name := range []string{"PhoneDropPanel", "PhoneDropToast"} {
+		wc := wndClassEx{wndProc: proc, instance: inst, cursor: cursor, className: wstr(name)}
+		wc.size = uint32(unsafe.Sizeof(wc))
+		registerCls.Call(ptr(&wc))
+	}
+	const exLayered, exTool, exTopmost, exNoActivate = 0x80000, 0x80, 0x8, 0x08000000
 	const wsPopup = 0x80000000
 	u.hwnd, _, _ = createWindow.Call(exLayered|exTool|exTopmost, ptr(wstr("PhoneDropPanel")), ptr(wstr(appName)),
 		wsPopup, 0, 0, 1, 1, 0, 0, inst, 0)
+	u.toast.hwnd, _, _ = createWindow.Call(exLayered|exTool|exTopmost|exNoActivate, ptr(wstr("PhoneDropToast")),
+		ptr(wstr(appName)), wsPopup, 0, 0, 1, 1, 0, 0, inst, 0)
 	u.taskbarCreated = uint32(win(user32, "RegisterWindowMessageW", ptr(wstr("TaskbarCreated"))))
 	u.addTray(false)
 

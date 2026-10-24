@@ -90,7 +90,8 @@ Create **PhoneDrop Setup**.
 1. `Scan QR or Barcode`. Rename **QR**.
 2. `Get Dictionary from Input` (input: *QR*). Rename **Pairing**.
 3. `If` *QR* **contains** `secret`. Inside the If:
-   1. `Save File`: input *QR*, **Ask Where to Save** off, **Destination Path**
+   1. `Set Name` of *QR* to `config.json` (otherwise Shortcuts may save it as `config.txt`).
+      Then `Save File`: input *Renamed Item*, **Ask Where to Save** off, **Destination Path**
       `PhoneDrop/config.json`, **Overwrite If File Exists** on.
    2. `Get Device Details`: **Device Name**. Rename **Name**.
    3. `Generate Hash` **SHA256** of *Name*. Rename **BodyHash**.
@@ -111,7 +112,8 @@ Create **PhoneDrop Setup**.
       3. `Generate Hash` **SHA256** of *Profile*, then `Change Case` to **lowercase**.
          Rename **ProfileHash**.
       4. `If` *ProfileHash* **is** *Pairing.ca*:
-         `Save File` *Profile*, **Ask Where to Save** off, **Destination Path**
+         `Set Name` of *Profile* to `PhoneDrop.mobileconfig`, then `Save File` *Renamed Item*,
+         **Ask Where to Save** off, **Destination Path**
          `PhoneDrop/PhoneDrop.mobileconfig`, **Overwrite If File Exists** on.
          `Show Alert`: "Last step: in the Files app open iCloud Drive → Shortcuts → PhoneDrop
          and tap PhoneDrop.mobileconfig. Then Settings → Profile Downloaded → Install, and

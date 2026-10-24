@@ -163,10 +163,12 @@ class Shortcut:
         g = self._uuid()
         p = {"GroupingIdentifier": g, "WFControlFlowMode": 0, "WFCondition": condition,
              "WFInput": {"Type": "Variable", "Variable": attach(ref)}}
+        # Recent iOS reads the comparison value only as a text-token string (a plain string
+        # imports as an empty field), and the number as a number.
         if value is not None:
-            p["WFConditionalActionString"] = value if isinstance(value, str) else tok(*value)
+            p["WFConditionalActionString"] = tok(value) if isinstance(value, str) else tok(*value)
         if number is not None:
-            p["WFNumberValue"] = number
+            p["WFNumberValue"] = int(number) if str(number).isdigit() else number
         self.act("conditional", p)
         self._stack.append(["conditional", g, False])
 

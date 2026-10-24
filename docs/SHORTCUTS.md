@@ -84,7 +84,8 @@ five **Headers**, where *Req* is what *PhoneDrop Sign* returned:
 | `X-PD-Sig` | *Req.sig* |
 
 The PC's answers always contain the word `true` when something worked, and never when it didn't.
-That's what the shortcuts check for.
+That's what the shortcuts check for. *Get Contents of URL* hands back its answer as a file, and
+`If` only offers **contains** for text, so each check first puts the answer in a `Text` action.
 
 ## 2. PhoneDrop Setup
 
@@ -103,7 +104,7 @@ Create **PhoneDrop Setup**.
       Then `Set Variable` **Req** to it.
    6. `Get Contents of URL`: **POST**, the five headers, **Request Body** **File** = *Name*.
       Then `Set Variable` **Result** to it.
-   7. `If` *Result* **contains** `true`: `Show Alert` "Paired! You're ready to send."
+   7. `Text`: *Result* (just the variable). Then `If` that *Text* **contains** `true`: `Show Alert` "Paired! You're ready to send."
       **Otherwise**: `Show Alert` "Pairing didn't work: *Result*", then `Stop This Shortcut`.
       **End If**.
    8. *Only if you use **Encrypt transfers** on the PC (§7); otherwise skip.*
@@ -143,7 +144,7 @@ set **Receive** to *Images, Media, Files* and **If there's no input** to **Ask F
       `Run Shortcut` **PhoneDrop Sign** with it. Then `Set Variable` **Req** to it.
    4. `Get Contents of URL`: **POST**, the five headers plus `X-PD-Name` = *EncodedName*,
       **Request Body** **File** = *Repeat Item*. Then `Set Variable` **Result** to it.
-   5. `If` *Result* **does not contain** `true`: `Show Alert` "PhoneDrop: *Result*",
+   5. `Text`: *Result*. Then `If` that *Text* **does not contain** `true`: `Show Alert` "PhoneDrop: *Result*",
       `Stop This Shortcut`. **End If**.
 2. **End Repeat**. Optionally `Show Notification` "Sent to PC".
 
@@ -166,7 +167,8 @@ Safari web pages*, **If there's no input** → **Get Clipboard**.
    `Run Shortcut` **PhoneDrop Sign** with it. Then `Set Variable` **Req** to it.
 4. `Get Contents of URL`: **POST**, the five headers (no `X-PD-Name`), **Request Body**
    **File** = *Body*. Then `Set Variable` **Result** to it.
-5. `If` *Result* **does not contain** `true`: `Show Alert` "PhoneDrop: *Result*". **End If**.
+5. `Text`: *Result*. Then `If` that *Text* **does not contain** `true`: `Show Alert` "PhoneDrop: *Result*".
+   **End If**.
 
 The PC copies text to its clipboard (if *Copy received text* is on) and shows links with an
 **Open link** button.
@@ -199,7 +201,7 @@ which sends the clipboard. The phone collects them with **Receive from PC**.
 1. `Dictionary`: `method` = `GET`, `path` = `/v1/outbox`, `body` = `-` (one hyphen).
    `Run Shortcut` **PhoneDrop Sign** with it. Then `Set Variable` **Req** to it.
 2. `Get Contents of URL`: **GET**, the five headers. Then `Set Variable` **List** to it.
-3. `If` *List* **does not contain** `true`: `Show Alert` "PhoneDrop: *List*",
+3. `Text`: *List*. Then `If` that *Text* **does not contain** `true`: `Show Alert` "PhoneDrop: *List*",
    `Stop This Shortcut`. **End If**.
 4. `Get Dictionary Value` key `items` in *List*. Then `Set Variable` **Items** to it. `Count` *Items*; if it
    **is** `0`, `Show Notification` "Nothing waiting on the PC" and `Stop This Shortcut`.

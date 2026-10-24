@@ -1,62 +1,62 @@
 # Setting up the iPhone shortcuts
 
-PhoneDrop needs no iPhone app. It uses five shortcuts you build once in Apple's **Shortcuts** app:
+PhoneDrop needs no iPhone app. It uses six shortcuts you build once in Apple's **Shortcuts** app:
 
-| Shortcut | What it does | Build it in |
+| Shortcut | What it does | Section |
 |---|---|---|
 | **PhoneDrop Sign** | Helper used by the others (signs each request). You never run it yourself. | §1 |
 | **PhoneDrop Setup** | Pairs the iPhone with your PC by scanning the QR code. Run once. | §2 |
-| **Send to PC** | Share sheet: sends photos, videos, files, links and text. With no input it sends the clipboard. | §3 |
-| **Send Latest Screenshot** | One tap (Back Tap, Action Button, Control Center) sends your newest screenshot. | §4 |
-| **Receive from PC** | Fetches what the PC sent you: photos to Photos, files to Files, text to the clipboard. | §5 |
+| **Send to PC** | Share sheet: photos, videos and files. With no input it lets you pick photos. | §3 |
+| **Send Text to PC** | Share sheet: text and links. With no input it sends the clipboard. | §4 |
+| **Send Latest Screenshot** | One tap (Back Tap, Action Button, Control Center) sends your newest screenshot. | §5 |
+| **Receive from PC** | Collects what the PC sent: photos to Photos, files to Files, text to the clipboard. | §6 |
 
-> Building takes about 15 minutes. Once you have them, you can share each one from the Shortcuts
-> app as an iCloud link, so others install with one tap. Project releases will include those links.
+> Building takes about 20 minutes, once. Afterwards you can share each shortcut from the
+> Shortcuts app as an iCloud link, so other people install it with one tap.
 
 **How to read the steps.** `Action name` is what you type in the search bar at the bottom of the
-editor. **Bold** words are settings inside an action. "Variable *X*" means: long-press (or tap)
-the field, choose **Select Variable**, and pick the output of the action named *X*. To rename an
-action's output, tap it and choose **Rename**; the steps below name outputs so they're easy
-to pick.
+editor. **Bold** words are settings inside an action. *Italic* names are variables: tap the field,
+choose **Select Variable**, and pick the output of the action with that name. To give an output
+a name, tap it and choose **Rename**. *Config.secret* means: insert the variable *Config*, tap
+it, and choose the key `secret`. Type the `|` characters and keys exactly as shown, with no
+spaces.
 
-Before you start: in **Settings → Apps → Shortcuts → Advanced**, turn on **Allow Running
-Scripts** and **Allow Sharing Large Amounts of Data**.
+Before you start: in **Settings → Apps → Shortcuts → Advanced**, turn on **Allow Sharing Large
+Amounts of Data**.
 
 ---
 
 ## 1. PhoneDrop Sign (helper)
 
-Create a new shortcut named exactly **PhoneDrop Sign**. It reads the pairing file, then returns
-the URL and headers for one request.
+Create a new shortcut named exactly **PhoneDrop Sign**. It reads the pairing file and returns
+the URL and headers for one request. The other shortcuts call it with a *Dictionary* holding
+`method`, `path` and `body`.
 
 1. `Get File from Folder`: folder **Shortcuts**, path `PhoneDrop/config.json`, **Error If Not
-   Found** on.
-2. `Get Dictionary from Input` (input: *File* from step 1). Rename the output **Config**.
-3. `Format Date`: date **Current Date**, **Date Format** = *ISO 8601*, **Include ISO 8601 Time**
+   Found** on. Rename **ConfigFile**.
+2. `Get Dictionary from Input` (input: *ConfigFile*). Rename **Config**.
+3. `Format Date`: date **Current Date**, **Date Format** *ISO 8601*, **Include ISO 8601 Time**
    on. Rename **Time**.
 4. `Random Number` from `100000000` to `999999999`. Rename **R1**.
 5. `Random Number` from `100000000` to `999999999`. Rename **R2**.
-6. `Text`: `R1` `R2` (the two variables next to each other, no space). Rename **Nonce**.
-7. `Text`, all on one line, with `|` between items:
+6. `Text`: *R1* *R2* *Time*. Then `Generate Hash` **SHA256** of that *Text*. Rename **Nonce**.
+7. `Text` (one line):
+   *Config.secret*`|`*Shortcut Input.method*`|`*Shortcut Input.path*`|`*Time*`|`*Nonce*`|`*Shortcut Input.body*
 
-   `Config.secret`|`Shortcut Input.method`|`Shortcut Input.path`|`Time`|`Nonce`|`Shortcut Input.body`
-
-   For `Config.secret`: insert variable *Config*, tap it, choose the key `secret`. For
-   `Shortcut Input.method`: insert **Shortcut Input**, tap it, choose **Dictionary**, key
-   `method`. Same for `path` and `body`.
-8. `Generate Hash`: **SHA256** of the *Text* from step 7. Rename **Inner**.
-9. `Text`: `Config.secret`|`Inner` (one line, one `|`).
-10. `Generate Hash`: **SHA256** of the *Text* from step 9. Rename **Sig**.
-11. Choose http or https (https only when encryption is on, and never for the two setup
-    requests, which pass `plain`):
-    1. `Text`: `http`. Then `Set Variable` **Scheme** to it.
-    2. `If` *File* (from step 1) **contains** `"tls":true`:
-       `Get Dictionary Value` key `plain` in **Shortcut Input**, then
-       `If` *Dictionary Value* **does not have any value**: `Text` `https`, then
-       `Set Variable` **Scheme** to it. **End If**. **End If**.
-    3. `Text`: `Scheme` `://` `Config.host` `:` `Config.port` `Shortcut Input.path`.
-       Rename **URL**.
-12. `Dictionary` with these Text keys:
+   For *Shortcut Input.method*, insert **Shortcut Input**, tap it, choose **Dictionary**, key
+   `method`. Do the same for `path` and `body`.
+8. `Generate Hash` **SHA256** of the *Text* from step 7. Rename **Inner**.
+9. `Text`: *Config.secret*`|`*Inner*.
+10. `Generate Hash` **SHA256** of the *Text* from step 9. Rename **Sig**.
+11. Pick http or https. It's https only when the PC has encryption on, and never for the two
+    setup requests, which pass `plain`:
+    1. `Text`: `http`. `Set Variable` **Scheme** to it.
+    2. `Get Dictionary Value` key `tls` in *Config*. Rename **TLS**.
+       `Get Dictionary Value` key `plain` in **Shortcut Input**. Rename **Plain**.
+    3. `If` *TLS* **has any value**, and nested inside it `If` *Plain* **does not have any
+       value**: `Text` `https`, then `Set Variable` **Scheme** to it. **End If**. **End If**.
+12. `Text`: *Scheme*`://`*Config.base**Shortcut Input.path*. Rename **URL**.
+13. `Dictionary`, with these keys (type **Text**):
 
     | Key | Value |
     |---|---|
@@ -67,12 +67,23 @@ the URL and headers for one request.
     | `body` | *Shortcut Input.body* |
     | `sig` | *Sig* |
 
-13. `Stop and Output`: the *Dictionary*.
+14. `Stop and Output`: the *Dictionary*.
 
-Open the shortcut's settings (ⓘ) and make sure **Show in Share Sheet** is off.
+In the shortcut's settings (ⓘ), make sure **Show in Share Sheet** is off.
 
-> **Check:** the PC's signature test vector is in [§8](#8-for-developers). Feed the same values
-> through steps 7–10 and you must get the same `sig`.
+**Every request below** uses `Get Contents of URL` with URL *Req.url*, the method given, and these
+five **Headers**, where *Req* is what *PhoneDrop Sign* returned:
+
+| Header | Value |
+|---|---|
+| `X-PD-Phone` | *Req.phone* |
+| `X-PD-Time` | *Req.time* |
+| `X-PD-Nonce` | *Req.nonce* |
+| `X-PD-Body` | *Req.body* |
+| `X-PD-Sig` | *Req.sig* |
+
+The PC's answers always contain the word `true` when something worked, and never when it didn't.
+That's what the shortcuts check for.
 
 ## 2. PhoneDrop Setup
 
@@ -80,168 +91,159 @@ Create **PhoneDrop Setup**.
 
 1. `Scan QR or Barcode`. Rename **QR**.
 2. `Get Dictionary from Input` (input: *QR*). Rename **Pairing**.
-3. `If` *Pairing.pd* **is** `1`. Inside the If:
+3. `If` *QR* **contains** `secret`. Inside the If:
    1. `Save File`: input *QR*, **Ask Where to Save** off, **Destination Path**
       `PhoneDrop/config.json`, **Overwrite If File Exists** on.
    2. `Get Device Details`: **Device Name**. Rename **Name**.
-   3. `Generate Hash`: **SHA256** of *Name*. Rename **BodyHash**.
-   4. `Dictionary`: `method` = `POST`, `path` = `/v1/pair`, `body` = *BodyHash*,
-      `plain` = `1`.
-   5. `Run Shortcut`: **PhoneDrop Sign**, input: the *Dictionary*, **Show While Running** off.
+   3. `Generate Hash` **SHA256** of *Name*. Rename **BodyHash**.
+   4. `Dictionary`: `method` = `POST`, `path` = `/v1/pair`, `body` = *BodyHash*, `plain` = `1`.
+   5. `Run Shortcut` **PhoneDrop Sign** with the *Dictionary* (**Show While Running** off).
       Rename **Req**.
-   6. `Get Contents of URL`: URL *Req.url*. **Method** POST. **Headers**:
-
-      | Header | Value |
-      |---|---|
-      | `X-PD-Phone` | *Req.phone* |
-      | `X-PD-Time` | *Req.time* |
-      | `X-PD-Nonce` | *Req.nonce* |
-      | `X-PD-Body` | *Req.body* |
-      | `X-PD-Sig` | *Req.sig* |
-
-      **Request Body**: **File**, choose *Name*. Rename **Result**.
-   7. `Get Dictionary from Input` (input: *Result*). Rename **Reply**.
-   8. `If` *Result* **contains** `"ok":true` (type it exactly, with the quotes):
-      `Show Alert`: "Paired with *Reply.laptop*. You're ready to send."
-      **Otherwise**: `Show Alert`: "Pairing didn't work: *Result*", then
-      `Stop This Shortcut`.
-      **End If**
-   9. *Only needed if you use **Encrypt transfers** on the PC (§6); otherwise skip this step.*
-      `If` *QR* **contains** `"tls":true`:
+   6. `Get Contents of URL`: **POST**, the five headers, **Request Body** **File** = *Name*.
+      Rename **Result**.
+   7. `If` *Result* **contains** `true`: `Show Alert` "Paired! You're ready to send."
+      **Otherwise**: `Show Alert` "Pairing didn't work: *Result*", then `Stop This Shortcut`.
+      **End If**.
+   8. *Only if you use **Encrypt transfers** on the PC (§7); otherwise skip.*
+      `Get Dictionary Value` key `tls` in *Pairing*. `If` *Dictionary Value* **has any value**:
       1. `Dictionary`: `method` = `GET`, `path` = `/v1/ca.mobileconfig`, `body` = `-`,
-         `plain` = `1`.
-      2. `Run Shortcut`: **PhoneDrop Sign** with it. Rename **ProfileReq**.
-      3. `Get Contents of URL`: URL *ProfileReq.url*, **Method** GET, the five headers from
+         `plain` = `1`. `Run Shortcut` **PhoneDrop Sign** with it. Rename **ProfileReq**.
+      2. `Get Contents of URL`: URL *ProfileReq.url*, **GET**, the five headers from
          *ProfileReq*. Rename **Profile**.
-      4. `Generate Hash`: **SHA256** of *Profile*. Rename **ProfileHash**.
-      5. `If` *ProfileHash* **is** *Pairing.ca*:
+      3. `Generate Hash` **SHA256** of *Profile*, then `Change Case` to **lowercase**.
+         Rename **ProfileHash**.
+      4. `If` *ProfileHash* **is** *Pairing.ca*:
          `Save File` *Profile*, **Ask Where to Save** off, **Destination Path**
-         `PhoneDrop/PhoneDrop.mobileconfig`, **Overwrite If File Exists** on. Then
-         `Show Alert`: "One last step: open the Files app → iCloud Drive → Shortcuts → PhoneDrop
+         `PhoneDrop/PhoneDrop.mobileconfig`, **Overwrite If File Exists** on.
+         `Show Alert`: "Last step: in the Files app open iCloud Drive → Shortcuts → PhoneDrop
          and tap PhoneDrop.mobileconfig. Then Settings → Profile Downloaded → Install, and
          Settings → General → About → Certificate Trust Settings → turn on PhoneDrop."
          **Otherwise**: `Show Alert`: "The certificate didn't match the QR code. Don't install
-         anything. Pair again on your home network."
-         **End If**
-      **End If**
-4. **Otherwise** (the outer If): `Show Alert`: "That isn't a PhoneDrop code."
-5. **End If**
+         anything; pair again on your home network."
+         **End If**.
+      **End If**.
+4. **Otherwise**: `Show Alert` "That isn't a PhoneDrop code." **End If**.
 
 To pair: on the PC, click the tray icon → **Pair**. On the iPhone, run **PhoneDrop Setup** and
-scan the code. The PC asks *Allow "your iPhone" to send to this PC?*: click **Allow**.
+scan the code. Then on the PC click **Allow**.
 
-## 3. Send to PC
+## 3. Send to PC (photos, videos, files)
 
-Create **Send to PC**. Open its settings (ⓘ): turn on **Show in Share Sheet**, and in the
-first action set **Receive** to *Images, Media, Files, URLs, Text, Rich Text, Safari web
-pages* and **If there's no input** to **Get Clipboard**. With no input (Back Tap, Siri) it
-sends what you copied.
+Create **Send to PC**. In its settings (ⓘ) turn on **Show in Share Sheet**. In the first action,
+set **Receive** to *Images, Media, Files* and **If there's no input** to **Ask For → Photos**
+(or add `Select Photos` with **Select Multiple** on).
 
-1. `Repeat with Each` item in **Shortcut Input**. Inside the Repeat:
-   1. `Get Name` of *Repeat Item*. Rename **Name**.
-   2. `URL Encode` *Name* (**Encode**). Rename **EncodedName**.
-   3. `Generate Hash`: **SHA256** of *Repeat Item*. Rename **BodyHash**.
-   4. `Dictionary`: `method` = `POST`, `path` = `/v1/items`, `body` = *BodyHash*.
-   5. `Run Shortcut`: **PhoneDrop Sign**, input: the *Dictionary*, **Show While Running** off.
-      Rename **Req**.
-   6. `Get Contents of URL`: URL *Req.url*, **Method** POST, the five headers from §2 step 6
-      (`X-PD-Phone`, `X-PD-Time`, `X-PD-Nonce`, `X-PD-Body`, `X-PD-Sig`), plus one more:
-      `X-PD-Name` = *EncodedName*. **Request Body**: **File**, choose *Repeat Item*.
-      Rename **Result**.
-   7. `If` *Result* **does not contain** `"ok":true`: `Show Alert` "PhoneDrop: *Result*",
-      then `Stop This Shortcut`. **End If**.
-2. **End Repeat**.
-3. `Show Notification`: "Sent to PC" (optional; turn off its sound if you like).
-
-The PC works out what each item is: photos and files are saved (default: Downloads), text is
-copied to the PC's clipboard, and links show an **Open link** button.
+1. `Repeat with Each` item in **Shortcut Input**. Inside:
+   1. `Get Name` of *Repeat Item*. Then `URL Encode` it. Rename **EncodedName**.
+   2. `Generate Hash` **SHA256** of *Repeat Item*. Rename **BodyHash**.
+   3. `Dictionary`: `method` = `POST`, `path` = `/v1/items`, `body` = *BodyHash*.
+      `Run Shortcut` **PhoneDrop Sign** with it. Rename **Req**.
+   4. `Get Contents of URL`: **POST**, the five headers plus `X-PD-Name` = *EncodedName*,
+      **Request Body** **File** = *Repeat Item*. Rename **Result**.
+   5. `If` *Result* **does not contain** `true`: `Show Alert` "PhoneDrop: *Result*",
+      `Stop This Shortcut`. **End If**.
+2. **End Repeat**. Optionally `Show Notification` "Sent to PC".
 
 > **Videos:** if a video fails with *"produced no file representation"*, add `Encode Media`
-> (**Size**: *Passthrough*) as the first action inside the Repeat, and use its output instead
-> of *Repeat Item* in steps 3 and 6. Passthrough doesn't re-compress, so it's quick.
+> (**Size** *Passthrough*) as the first action inside the Repeat, and use its output instead of
+> *Repeat Item* in steps 2 and 4. Passthrough doesn't re-compress, so it's quick.
 
-## 4. Send Latest Screenshot
+On the PC, photos and files are saved (default: Downloads) and a notification offers **Open** and
+**Show in folder**.
 
-Create **Send Latest Screenshot**:
+## 4. Send Text to PC (text, links, clipboard)
 
-1. `Get Latest Screenshots`: **1**.
-2. Steps 1.1 to 1.7 from §3, with *Latest Screenshots* in place of *Repeat Item* (no Repeat
-   is needed for one item). Quickest: duplicate **Send to PC**, delete the Repeat and point the
-   actions at *Latest Screenshots*.
+Create **Send Text to PC**. **Show in Share Sheet** on, **Receive** *Text, URLs, Rich Text,
+Safari web pages*, **If there's no input** → **Get Clipboard**.
 
-### Making it one gesture
+1. `Text`: **Shortcut Input**. Rename **Body**. This turns links and pages into plain text, so
+   the hash and the upload are the same bytes.
+2. `Generate Hash` **SHA256** of *Body*. Rename **BodyHash**.
+3. `Dictionary`: `method` = `POST`, `path` = `/v1/items`, `body` = *BodyHash*.
+   `Run Shortcut` **PhoneDrop Sign** with it. Rename **Req**.
+4. `Get Contents of URL`: **POST**, the five headers (no `X-PD-Name`), **Request Body**
+   **File** = *Body*. Rename **Result**.
+5. `If` *Result* **does not contain** `true`: `Show Alert` "PhoneDrop: *Result*". **End If**.
+
+The PC copies text to its clipboard (if *Copy received text* is on) and shows links with an
+**Open link** button.
+
+## 5. Send Latest Screenshot
+
+Duplicate **Send to PC** and name it **Send Latest Screenshot**. Turn **Show in Share Sheet** off,
+put `Get Latest Screenshots` (**1**) at the top, and make the Repeat loop over *Latest
+Screenshots* instead of *Shortcut Input*.
+
+### One gesture
 
 | Trigger | Where to set it |
 |---|---|
-| **Back Tap** (double or triple tap on the back of the phone) | Settings → Accessibility → Touch → Back Tap |
+| **Back Tap** (double/triple tap the back of the phone) | Settings → Accessibility → Touch → Back Tap |
 | **Action Button** (iPhone 15 Pro and later) | Settings → Action Button → Shortcut |
 | **Control Center / Lock Screen** (iOS 18+) | Edit Control Center → Add a Control → Shortcuts |
-| **Siri** | Say the shortcut's name: "Send to PC" |
-| **Share sheet** | Share → **Send to PC** (for *Send to PC* only) |
+| **Siri** | Say the shortcut's name |
+| **Share sheet** | Share → **Send to PC** / **Send Text to PC** |
 
-A good set: Back Tap double → **Send Latest Screenshot**, triple → **Send to PC** (with no
-input it sends the clipboard). If Back Tap is already in use, use a Control Center button.
+A good set: Back Tap double → **Send Latest Screenshot**, triple → **Send Text to PC** (sends
+the clipboard), and a Control Center button → **Receive from PC**.
 
-## 5. Receive from PC
+## 6. Receive from PC
 
-On the PC you queue things for the phone: Explorer → right-click a file → **Send to →
-PhoneDrop (to phone)**, the panel's **Files…** / **Clipboard** buttons, or **Ctrl+Alt+P** (sends the
-clipboard). The phone collects them when you run **Receive from PC**. Give it a Back Tap or a
-Control Center button too.
+On the PC you queue things for the phone in three ways: right-click files in Explorer → **Send to
+→ PhoneDrop (to phone)**; the panel's **Files…** and **Clipboard** buttons; or **Ctrl+Alt+P**,
+which sends the clipboard. The phone collects them with **Receive from PC**.
 
-Create **Receive from PC**:
-
-1. `Dictionary`: `method` = `GET`, `path` = `/v1/outbox`, `body` = `-` (a single hyphen).
-2. `Run Shortcut`: **PhoneDrop Sign**, input: the *Dictionary*. Rename **Req**.
-3. `Get Contents of URL`: URL *Req.url*, **Method** GET, the five headers from §2 step 6
-   (`X-PD-Body` will be `-`). Rename **List**.
-4. `If` *List* **does not contain** `"ok":true`: `Show Alert` "PhoneDrop: *List*", then
+1. `Dictionary`: `method` = `GET`, `path` = `/v1/outbox`, `body` = `-` (one hyphen).
+   `Run Shortcut` **PhoneDrop Sign** with it. Rename **Req**.
+2. `Get Contents of URL`: **GET**, the five headers. Rename **List**.
+3. `If` *List* **does not contain** `true`: `Show Alert` "PhoneDrop: *List*",
    `Stop This Shortcut`. **End If**.
-5. `Get Dictionary Value`: **Value** for key `items` in *List*. Rename **Items**.
-6. `Count` *Items*. `If` *Count* **is** `0`: `Show Notification` "Nothing waiting on the PC",
-   `Stop This Shortcut`. **End If**.
-7. `Repeat with Each` item in *Items*. Inside the Repeat:
+4. `Get Dictionary Value` key `items` in *List*. Rename **Items**. `Count` *Items*; if it
+   **is** `0`, `Show Notification` "Nothing waiting on the PC" and `Stop This Shortcut`.
+5. `Repeat with Each` item in *Items*. Inside:
    1. `Get Dictionary Value` key `kind` in *Repeat Item*. Rename **Kind**.
    2. `If` *Kind* **is** `text`: `Copy to Clipboard` *Repeat Item.text*. **End If**.
-   3. `If` *Kind* **is** `url`: `Open URLs` *Repeat Item.text*. **End If**.
-   4. `If` *Kind* **is any of** `image`, `video`, `file` (or three Ifs, one each):
+   3. `If` *Kind* **is** `url`: `If` *Repeat Item.text* **begins with** `http`:
+      `Open URLs` *Repeat Item.text*. **Otherwise**: `Copy to Clipboard` it. **End If**.
+      **End If**.
+   4. `If` *Kind* **is** `image`, and again for `video` and `file` (three Ifs, or `Otherwise`s):
       1. `Dictionary`: `method` = `GET`, `path` = *Repeat Item.path*, `body` = `-`.
-      2. `Run Shortcut`: **PhoneDrop Sign** with it. Rename **FileReq**.
-      3. `Get Contents of URL`: URL *FileReq.url*, **Method** GET, the five headers from
-         *FileReq*. Rename **Download**.
-      4. `If` *Kind* **is** `file`: `Save File` *Download* (**Ask Where to Save** on).
-         **Otherwise**: `Save to Photo Album` *Download* (Recents). **End If**.
-      **End If**
-8. **End Repeat**.
-9. `Show Notification`: "Received *Count* from the PC".
+         `Run Shortcut` **PhoneDrop Sign** with it. Rename **FileReq**.
+      2. `Get Contents of URL`: URL *FileReq.url*, **GET**, the five headers from *FileReq*.
+         Rename **Download**.
+      3. For `image` and `video`: `Save to Photo Album` *Download*. For `file`: `Save File`
+         *Download* (**Ask Where to Save** on).
+6. **End Repeat**. `Show Notification` "Received *Count* from the PC".
 
-Text and links leave the PC's outbox as soon as they're listed; files leave once downloaded.
-Anything not collected disappears after 24 hours.
+Text and links leave the PC once listed; files once downloaded. Anything not collected within 24
+hours is dropped.
 
-## 6. Encryption (optional, beta)
+## 7. Encryption (optional, beta)
 
-With **Settings → Encrypt transfers** on, the PC acts as a tiny certificate authority that
-may only vouch for itself (its own `.local` name and private IP addresses). The Setup shortcut
-downloads it, checks it against the hash in the QR code (so nobody on the network can swap it),
-and saves it for you to install. After that, the phone talks to the PC over HTTPS only.
+With **Settings → Encrypt transfers** on, the PC acts as a tiny certificate authority that may only
+vouch for itself (its own `.local` name and private IP addresses). The Setup shortcut downloads
+it, checks it against the hash in the QR code so nobody on the network can swap it, and saves it
+for you to install. From then on the phone talks to the PC over HTTPS only.
 
-Turned it on after pairing? Remove the phone in the PC's panel and pair again, so the new QR code
-carries the certificate. **Beta:** the PC relies on iOS enforcing the certificate's name
-constraints, and that hasn't been checked on a real iPhone yet. See the README.
+- Turned encryption **on** after pairing? Remove the phone in the PC's panel and pair again, so
+  the new QR code carries the certificate.
+- Turned it **off**? Phones paired with it on keep trying HTTPS, so pair them again too.
+- **Beta:** the PC relies on iOS enforcing the certificate's name constraints, which hasn't been
+  checked on a real iPhone yet. See the README.
 
-## 7. Troubleshooting
+## 8. Troubleshooting
 
 | You see | Meaning |
 |---|---|
-| `unauthorized` | The PC didn't accept the signature. Check §1 step 7 character by character (the `\|` separators, no spaces). If it happens right after pairing, rerun Setup. |
-| *Could not connect to the server* | The PC isn't listening: is the tray panel saying *Ready to receive*? Is the phone on the same Wi-Fi? |
-| *A server with the specified hostname could not be found* | `.local` names don't resolve on this network. Open `config.json` in Files (Shortcuts folder → PhoneDrop) and replace the `host` value with one of the `ips`. |
+| `unauthorized` | The PC didn't accept the signature. Check §1 steps 6–10 character by character (the `\|` separators, no spaces). Right after pairing, rerun Setup. |
+| *Could not connect to the server* | The PC isn't listening: does the tray panel say *Ready to receive*? Is the phone on the same Wi-Fi? |
+| *A server with the specified hostname could not be found* | `.local` names don't resolve on this network. In Files, open Shortcuts → PhoneDrop → `config.json` and replace the host in `base` with one of the `ips` (keep `:47474`). |
 | `denied` | Someone clicked Deny on the PC, or nobody answered within 50 seconds. Run Setup again. |
-| `use https` | Encryption is on and this phone already used it once, but this request came over plain HTTP. Check §1 step 11. |
-| *The certificate for this server is invalid* | Encryption is on but the profile isn't installed or trusted yet (§2 step 9), or the PC made a new certificate. Pair again. |
-| A video fails with *no file representation* | See the note under §3. |
+| `body hash mismatch` | What was sent isn't what was hashed. For text and links use **Send Text to PC**; for videos see the note in §3. |
+| `use https` / *certificate is invalid* | Encryption settings changed since pairing (§7). Pair again. |
+| Your old pairing stopped working after a failed Setup | Setup saves the new code before the PC says yes. Run Setup again and click Allow. |
 
-## 8. For developers
+## 9. For developers
 
 Test vector for the signature (see [PROTOCOL.md §3](PROTOCOL.md#3-signed-requests)):
 
@@ -256,4 +258,4 @@ Test vector for the signature (see [PROTOCOL.md §3](PROTOCOL.md#3-signed-reques
 | **sig** | `936b011316a67ab2656939ab738b1786fa40ca55380faeec5111d0693056caaf` |
 
 If *Generate Hash* prints upper-case hex, the inner hash is upper case and the signature is
-`f14fe1f8e6dab993f61ab6229ca63ceaeb81a26f86a206d2b77149e51fc0c449`, which the PC accepts too.
+`f14fe1f8e6dab993f61ab6229ca63ceaeb81a26f86a206d2b77149e51fc0c449`, which the PC also accepts.

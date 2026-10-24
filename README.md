@@ -13,7 +13,7 @@ AirDrop-style sharing between an **iPhone** and a **Windows PC** over your home 
 | From the phone | On the PC |
 |---|---|
 | Photos, videos, files | Saved to Downloads (or a folder you pick), with a toast: **Open** · **Show in folder** |
-| Text | Copied to the PC's clipboard |
+| Text, clipboard | Copied to the PC's clipboard |
 | Links | Toast with **Open link** (never opened automatically) |
 | Latest screenshot | One Back Tap |
 
@@ -46,7 +46,7 @@ would need an App Store app), so you collect PC → phone items by running a sho
 **iPhone**
 
 Build the shortcuts with the step-by-step guide: **[docs/SHORTCUTS.md](docs/SHORTCUTS.md)**
-(about 15 minutes, once). Then on the PC click **Pair**, run **PhoneDrop Setup** on the iPhone,
+(about 20 minutes, once). Then on the PC click **Pair**, run **PhoneDrop Setup** on the iPhone,
 scan the code, and click **Allow** on the PC.
 
 Uninstall: `.\install.ps1 -Uninstall`. Your settings and paired phones stay in
@@ -66,8 +66,9 @@ Uninstall: `.\install.ps1 -Uninstall`. Your settings and paired phones stay in
 **Threat model.** Without encryption, someone already on your Wi-Fi who can see the traffic
 could read what you send (as with any unencrypted LAN traffic); they still can't send to your PC
 or impersonate your phone. On the phone, the pairing file lives in iCloud Drive
-(`Shortcuts/PhoneDrop/config.json`), since Shortcuts has no keychain. Anyone who gets it can send
-files to that PC while on the same network, until you remove the phone in the panel.
+(`Shortcuts/PhoneDrop/config.json`), since Shortcuts has no keychain, so it syncs to your other
+Apple devices and iCloud.com. Anyone who gets it can, while on the same network as the PC, send
+files to it and collect whatever is waiting in its outbox, until you remove the phone in the panel.
 
 **Encrypt transfers (beta).** Settings → *Encrypt transfers* makes the PC a tiny certificate
 authority that may only vouch for itself (X.509 name constraints: its own `.local` name and

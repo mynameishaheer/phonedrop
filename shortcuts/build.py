@@ -485,11 +485,12 @@ def build_receive():
 
     s.repeat_each(var("Items"))
     item = var(REPEAT_ITEM)
-    s.set("Kind", s.get_value(item, "kind"))
+    # A Dictionary Value only offers "has any value" in an If, so make the ones we compare text.
+    s.set("Kind", s.text(s.get_value(item, "kind")))
 
     # Apple's signing server rejects key lookups on Repeat Item and Open URLs fed plain text,
     # so read keys with Get Dictionary Value and turn links into a URL first.
-    s.set("ItemText", s.get_value(item, "text"))
+    s.set("ItemText", s.text(s.get_value(item, "text")))
     s.set("ItemPath", s.get_value(item, "path"))
 
     s.if_(var("Kind"), IS, "text")

@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 )
 
@@ -40,6 +41,30 @@ type confirmReq struct {
 	reply chan bool
 }
 
+// srvBackend adapts the server and its phone store to the panel.
+type srvBackend struct{ srv *server }
+
+func (b srvBackend) startPairing() (string, time.Time, error) {
+	qr, exp := b.srv.startPairing(pairingInfo{})
+	return qr, exp, nil
+}
+
+func (b srvBackend) cancelPairing() { b.srv.cancelPairing() }
+
+func (b srvBackend) phoneList() []phoneView {
+	var out []phoneView
+	for _, p := range b.srv.phones.list() {
+		out = append(out, phoneView{ID: p.ID, Name: p.Name, Paired: p.Paired, LastSeen: p.LastSeen})
+	}
+	return out
+}
+
+func (b srvBackend) removePhone(id string) {
+	if err := b.srv.phones.remove(id); err != nil {
+		log.Printf("remove phone %s: %v", id, err)
+	}
+}
+
 // ---------- appHooks, called from server goroutines ----------
 
 func (u *ui) confirmPairing(ctx context.Context, name string) bool {
@@ -63,6 +88,9 @@ func (u *ui) confirmPairing(ctx context.Context, name string) bool {
 }
 
 func (u *ui) phonesChanged() { postMsg.Call(u.hwnd, wmRefresh, 0, 0) }
+
+// received: milestone 3 shows a toast and records history.
+func (u *ui) received(it receivedItem) {}
 
 // ---------- UI thread ----------
 

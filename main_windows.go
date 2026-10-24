@@ -29,10 +29,13 @@ func main() {
 	u := &ui{view: "main", set: loadSettings(), th: loadTheme(), scale: 1, recheck: make(chan struct{}, 1)}
 	theUI = u
 	log.Printf("%s starting, port %d", appName, u.set.Port)
-	srv := newServer(u.set.Port, func(err error) {
+	phones := loadPhones(phonesPath(), dpapiProtect, dpapiUnprotect)
+	log.Printf("%d paired phone(s)", len(phones.list()))
+	srv := newServer(u.set.Port, u, phones, func(err error) {
 		log.Printf("listen: %v", err)
 		u.setListenErr(err)
 	})
+	u.app = srvBackend{srv}
 	go watchNetworks(func(st netState) {
 		for _, n := range st.networks {
 			log.Printf("network %q category=%d addrs=%v", n.name, n.category, n.addrs)
@@ -58,6 +61,7 @@ func preview(dir string) {
 		c.free()
 	}
 	appIcon(dir + `\app-icon.png`)
+	previewMore(dir)
 
 	home := network{name: "HomeNet", category: catPrivate, addrs: []netip.Addr{netip.MustParseAddr("192.168.18.20")}}
 	cafe := network{name: "Café Wi-Fi", category: catPublic, addrs: []netip.Addr{netip.MustParseAddr("10.20.0.7")}}

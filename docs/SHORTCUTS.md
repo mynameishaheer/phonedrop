@@ -127,4 +127,15 @@ scan the code. The PC asks *Allow "your iPhone" to send to this PC?*: click **Al
 
 Test vector for the signature (see [PROTOCOL.md §3](PROTOCOL.md#3-signed-requests)):
 
-*Added with milestone 2.*
+| Input | Value |
+|---|---|
+| secret | `9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08` |
+| method, path | `POST`, `/v1/items` |
+| time | `2026-10-24T22:15:24+05:00` |
+| nonce | `n0nce-7f3a9c21` |
+| body (`hello`) | `2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824` |
+| **inner** | `f795c82b4e578020b2393c09a9ca484d8e006738bf732af151ef43a93dff74ad` |
+| **sig** | `936b011316a67ab2656939ab738b1786fa40ca55380faeec5111d0693056caaf` |
+
+If *Generate Hash* prints upper-case hex, the inner hash is upper case and the signature is
+`f14fe1f8e6dab993f61ab6229ca63ceaeb81a26f86a206d2b77149e51fc0c449`, which the PC accepts too.

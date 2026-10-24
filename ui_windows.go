@@ -445,7 +445,7 @@ func (u *ui) drawSettings(c *canvas, p rectF) {
 	c.text("General", fontSmallSemi, rectF{x + 2, y + 10, w, labelH - 10}, t.text2, 0, 1)
 	y += labelH
 	u.drawCard(c, rectF{x, y, w, 3 * 48}, t.card)
-	hk := "Ctrl+Alt+P sends the clipboard to the phone"
+	hk := "Ctrl+Alt+P sends the clipboard"
 	if u.hotkeyErr && u.set.Hotkey {
 		hk = "Ctrl+Alt+P (taken by another app)"
 	}

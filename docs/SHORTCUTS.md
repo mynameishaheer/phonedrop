@@ -47,7 +47,15 @@ the URL and headers for one request.
 8. `Generate Hash`: **SHA256** of the *Text* from step 7. Rename **Inner**.
 9. `Text`: `Config.secret`|`Inner` (one line, one `|`).
 10. `Generate Hash`: **SHA256** of the *Text* from step 9. Rename **Sig**.
-11. `Text`: `http://` `Config.host` `:` `Config.port` `Shortcut Input.path`. Rename **URL**.
+11. Choose http or https (https only when encryption is on, and never for the two setup
+    requests, which pass `plain`):
+    1. `Text`: `http`. Then `Set Variable` **Scheme** to it.
+    2. `If` *File* (from step 1) **contains** `"tls":true`:
+       `Get Dictionary Value` key `plain` in **Shortcut Input**, then
+       `If` *Dictionary Value* **does not have any value**: `Text` `https`, then
+       `Set Variable` **Scheme** to it. **End If**. **End If**.
+    3. `Text`: `Scheme` `://` `Config.host` `:` `Config.port` `Shortcut Input.path`.
+       Rename **URL**.
 12. `Dictionary` with these Text keys:
 
     | Key | Value |
@@ -63,7 +71,7 @@ the URL and headers for one request.
 
 Open the shortcut's settings (ⓘ) and make sure **Show in Share Sheet** is off.
 
-> **Check:** the PC's signature test vector is in [§7](#7-for-developers). Feed the same values
+> **Check:** the PC's signature test vector is in [§8](#8-for-developers). Feed the same values
 > through steps 7–10 and you must get the same `sig`.
 
 ## 2. PhoneDrop Setup
@@ -77,7 +85,8 @@ Create **PhoneDrop Setup**.
       `PhoneDrop/config.json`, **Overwrite If File Exists** on.
    2. `Get Device Details`: **Device Name**. Rename **Name**.
    3. `Generate Hash`: **SHA256** of *Name*. Rename **BodyHash**.
-   4. `Dictionary`: `method` = `POST`, `path` = `/v1/pair`, `body` = *BodyHash*.
+   4. `Dictionary`: `method` = `POST`, `path` = `/v1/pair`, `body` = *BodyHash*,
+      `plain` = `1`.
    5. `Run Shortcut`: **PhoneDrop Sign**, input: the *Dictionary*, **Show While Running** off.
       Rename **Req**.
    6. `Get Contents of URL`: URL *Req.url*. **Method** POST. **Headers**:
@@ -94,7 +103,26 @@ Create **PhoneDrop Setup**.
    7. `Get Dictionary from Input` (input: *Result*). Rename **Reply**.
    8. `If` *Result* **contains** `"ok":true` (type it exactly, with the quotes):
       `Show Alert`: "Paired with *Reply.laptop*. You're ready to send."
-      **Otherwise**: `Show Alert`: "Pairing didn't work: *Result*".
+      **Otherwise**: `Show Alert`: "Pairing didn't work: *Result*", then
+      `Stop This Shortcut`.
+      **End If**
+   9. *Only needed if you use **Encrypt transfers** on the PC (§6); otherwise skip this step.*
+      `If` *QR* **contains** `"tls":true`:
+      1. `Dictionary`: `method` = `GET`, `path` = `/v1/ca.mobileconfig`, `body` = `-`,
+         `plain` = `1`.
+      2. `Run Shortcut`: **PhoneDrop Sign** with it. Rename **ProfileReq**.
+      3. `Get Contents of URL`: URL *ProfileReq.url*, **Method** GET, the five headers from
+         *ProfileReq*. Rename **Profile**.
+      4. `Generate Hash`: **SHA256** of *Profile*. Rename **ProfileHash**.
+      5. `If` *ProfileHash* **is** *Pairing.ca*:
+         `Save File` *Profile*, **Ask Where to Save** off, **Destination Path**
+         `PhoneDrop/PhoneDrop.mobileconfig`, **Overwrite If File Exists** on. Then
+         `Show Alert`: "One last step: open the Files app → iCloud Drive → Shortcuts → PhoneDrop
+         and tap PhoneDrop.mobileconfig. Then Settings → Profile Downloaded → Install, and
+         Settings → General → About → Certificate Trust Settings → turn on PhoneDrop."
+         **Otherwise**: `Show Alert`: "The certificate didn't match the QR code. Don't install
+         anything. Pair again on your home network."
+         **End If**
       **End If**
 4. **Otherwise** (the outer If): `Show Alert`: "That isn't a PhoneDrop code."
 5. **End If**
@@ -157,7 +185,7 @@ input it sends the clipboard). If Back Tap is already in use, use a Control Cent
 ## 5. Receive from PC
 
 On the PC you queue things for the phone: Explorer → right-click a file → **Send to →
-PhoneDrop**, the panel's **Files…** / **Clipboard** buttons, or **Ctrl+Alt+P** (sends the
+PhoneDrop (to phone)**, the panel's **Files…** / **Clipboard** buttons, or **Ctrl+Alt+P** (sends the
 clipboard). The phone collects them when you run **Receive from PC**. Give it a Back Tap or a
 Control Center button too.
 
@@ -190,7 +218,18 @@ Create **Receive from PC**:
 Text and links leave the PC's outbox as soon as they're listed; files leave once downloaded.
 Anything not collected disappears after 24 hours.
 
-## 6. Troubleshooting
+## 6. Encryption (optional, beta)
+
+With **Settings → Encrypt transfers** on, the PC acts as a tiny certificate authority that
+may only vouch for itself (its own `.local` name and private IP addresses). The Setup shortcut
+downloads it, checks it against the hash in the QR code (so nobody on the network can swap it),
+and saves it for you to install. After that, the phone talks to the PC over HTTPS only.
+
+Turned it on after pairing? Remove the phone in the PC's panel and pair again, so the new QR code
+carries the certificate. **Beta:** the PC relies on iOS enforcing the certificate's name
+constraints, and that hasn't been checked on a real iPhone yet. See the README.
+
+## 7. Troubleshooting
 
 | You see | Meaning |
 |---|---|
@@ -198,8 +237,11 @@ Anything not collected disappears after 24 hours.
 | *Could not connect to the server* | The PC isn't listening: is the tray panel saying *Ready to receive*? Is the phone on the same Wi-Fi? |
 | *A server with the specified hostname could not be found* | `.local` names don't resolve on this network. Open `config.json` in Files (Shortcuts folder → PhoneDrop) and replace the `host` value with one of the `ips`. |
 | `denied` | Someone clicked Deny on the PC, or nobody answered within 50 seconds. Run Setup again. |
+| `use https` | Encryption is on and this phone already used it once, but this request came over plain HTTP. Check §1 step 11. |
+| *The certificate for this server is invalid* | Encryption is on but the profile isn't installed or trusted yet (§2 step 9), or the PC made a new certificate. Pair again. |
+| A video fails with *no file representation* | See the note under §3. |
 
-## 7. For developers
+## 8. For developers
 
 Test vector for the signature (see [PROTOCOL.md §3](PROTOCOL.md#3-signed-requests)):
 

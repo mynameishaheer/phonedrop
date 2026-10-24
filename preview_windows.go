@@ -33,6 +33,18 @@ func previewMore(dir string) {
 		u = base("main")
 		u.removeID, u.removeAt, u.flash, u.flashUntil = "b2", now, "Paired with Shaheer’s iPhone", now.Add(time.Hour)
 		render("phones-remove", u)
+		u = base("main")
+		u.out = fakeOut(3)
+		u.recent = []historyEntry{
+			{Kind: "image", Name: "IMG_2041.HEIC", Path: `C:\x\IMG_2041.HEIC`, From: "Shaheer’s iPhone", Time: now.Add(-2 * time.Minute), Dir: "in"},
+			{Kind: "url", Text: "https://github.com/mynameishaheer/phonedrop", From: "Shaheer’s iPhone", Time: now.Add(-time.Hour), Dir: "in"},
+			{Kind: "file", Name: "Report.pdf", From: "Shaheer’s iPhone", Time: now.Add(-26 * time.Hour), Dir: "out"},
+		}
+		u.hover = "rec:1"
+		render("full", u)
+		u = base("settings")
+		u.set.Encrypt = true
+		render("settings-encrypt", u)
 		u = base("pair")
 		u.qr, u.pairExpires = qr, now.Add(102*time.Second)
 		render("pair", u)
@@ -66,3 +78,11 @@ func previewMore(dir string) {
 		}
 	}
 }
+
+type fakeOut int
+
+func (f fakeOut) addFile(string) error         { return nil }
+func (f fakeOut) addText(string)               {}
+func (f fakeOut) addData(string, []byte) error { return nil }
+func (f fakeOut) count() int                   { return int(f) }
+func (f fakeOut) clear()                       {}

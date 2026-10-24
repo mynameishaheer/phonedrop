@@ -274,6 +274,19 @@ func TestMediaKind(t *testing.T) {
 	}
 }
 
+func TestPhotosKind(t *testing.T) {
+	for name, want := range map[string]string{
+		"a.JPG": "image", "a.jpeg": "image", "a.png": "image", "a.heic": "image", "a.HEIF": "image",
+		"a.gif": "image", "a.webp": "image", "a.tif": "image", "a.tiff": "image", "a.bmp": "image",
+		"a.mov": "video", "a.MP4": "video", "a.m4v": "video", "a.3gp": "video",
+		"a.avif": "file", "a.mkv": "file", "a.webm": "file", "a.avi": "file", "a.pdf": "file", "a": "file", "": "file",
+	} {
+		if got := photosKind(name); got != want {
+			t.Errorf("photosKind(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
+
 func TestMarkOfTheWeb(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "f.txt")
 	if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {

@@ -24,6 +24,7 @@ const (
 )
 
 type network struct {
+	id       guid // INetwork::GetNetworkId: two networks can share a display name
 	name     string
 	category int
 	addrs    []netip.Addr
@@ -69,7 +70,10 @@ var (
 	iidINetworkListManager  = guid{0xDCB00000, 0x570F, 0x4A9B, [8]byte{0x8D, 0x69, 0x19, 0x9F, 0xDB, 0xA5, 0x72, 0x3B}}
 )
 
-// comCall calls method index of a COM object's vtable (0-2 IUnknown, 3-6 IDispatch).
+// comCall calls method index of a COM object's vtable (0-2 IUnknown, 3-6 IDispatch). Pointer
+// arguments must be converted inline at the call, as for win.
+//
+//go:uintptrescapes
 func comCall(obj unsafe.Pointer, index int, args ...uintptr) uintptr {
 	vtbl := *(*unsafe.Pointer)(obj)
 	fn := *(*uintptr)(unsafe.Add(vtbl, index*int(unsafe.Sizeof(uintptr(0)))))
@@ -90,6 +94,7 @@ const (
 	connGetNetwork           = 7  // INetworkConnection
 	connGetAdapterID         = 12 // INetworkConnection
 	netGetName               = 7  // INetwork
+	netGetNetworkID          = 11 // INetwork
 	netGetCategory           = 18 // INetwork
 )
 
@@ -104,8 +109,8 @@ func readNetworks() netState {
 	defer win(ole32, "CoUninitialize")
 
 	var nlm unsafe.Pointer
-	if r := win(ole32, "CoCreateInstance", ptr(&clsidNetworkListManager), 0, 0x17, /*CLSCTX_ALL*/
-		ptr(&iidINetworkListManager), uintptr(unsafe.Pointer(&nlm))); int32(r) < 0 {
+	if r := win(ole32, "CoCreateInstance", uintptr(unsafe.Pointer(&clsidNetworkListManager)), 0, 0x17, /*CLSCTX_ALL*/
+		uintptr(unsafe.Pointer(&iidINetworkListManager)), uintptr(unsafe.Pointer(&nlm))); int32(r) < 0 {
 		return netState{err: syscall.Errno(r)}
 	}
 	defer comRelease(nlm)
@@ -116,16 +121,16 @@ func readNetworks() netState {
 	defer comRelease(enum)
 
 	adapters := adapterAddrs()
-	byName := map[string]*network{}
-	var order []string
+	byID := map[guid]*network{}
+	var order []guid
 	for {
 		var conn unsafe.Pointer
 		var fetched uint32
-		if r := comCall(enum, enumNext, 1, uintptr(unsafe.Pointer(&conn)), ptr(&fetched)); r != 0 || fetched == 0 {
+		if r := comCall(enum, enumNext, 1, uintptr(unsafe.Pointer(&conn)), uintptr(unsafe.Pointer(&fetched))); r != 0 || fetched == 0 {
 			break
 		}
 		var adapter guid
-		comCall(conn, connGetAdapterID, ptr(&adapter))
+		comCall(conn, connGetAdapterID, uintptr(unsafe.Pointer(&adapter)))
 		var nw unsafe.Pointer
 		comCall(conn, connGetNetwork, uintptr(unsafe.Pointer(&nw)))
 		comRelease(conn)
@@ -134,25 +139,34 @@ func readNetworks() netState {
 		}
 		var bstr *uint16
 		var cat int32
+		var id guid
 		comCall(nw, netGetName, uintptr(unsafe.Pointer(&bstr)))
-		comCall(nw, netGetCategory, ptr(&cat))
+		comCall(nw, netGetNetworkID, uintptr(unsafe.Pointer(&id)))
+		comCall(nw, netGetCategory, uintptr(unsafe.Pointer(&cat)))
 		comRelease(nw)
 		name := bstrString(bstr)
-		n := byName[name]
+		n := byID[id]
 		if n == nil {
-			n = &network{name: name, category: int(cat)}
-			byName[name] = n
-			order = append(order, name)
+			n = &network{id: id, name: name, category: int(cat)}
+			byID[id] = n
+			order = append(order, id)
 		}
 		n.addrs = append(n.addrs, adapters[strings.ToUpper(adapter.String())]...)
 	}
 
 	var st netState
-	for _, name := range order {
-		n := byName[name]
+	for _, id := range order {
+		n := byID[id]
 		st.networks = append(st.networks, *n)
-		if n.category != catPublic {
-			st.listen = append(st.listen, n.addrs...)
+		if n.category == catPublic {
+			continue
+		}
+		for _, a := range n.addrs {
+			// Only LAN addresses: a Tailscale/CGNAT or public address on a Private adapter must
+			// not be bound (nor end up in the TLS certificate).
+			if privatePeer(a) {
+				st.listen = append(st.listen, a)
+			}
 		}
 	}
 	sort.Slice(st.listen, func(i, j int) bool { return st.listen[i].Less(st.listen[j]) })
@@ -228,8 +242,8 @@ func watchNetworks(changed func(netState), recheck <-chan struct{}) {
 		runtime.LockOSThread()
 		var key uintptr
 		profiles := `SOFTWARE\Microsoft\Windows NT\CurrentVersion\NetworkList\Profiles`
-		if r, _, _ := advapi32.NewProc("RegOpenKeyExW").Call(hklm, ptr(wstr(profiles)), 0,
-			0x0010 /*KEY_NOTIFY*/, ptr(&key)); r != 0 {
+		if r, _, _ := advapi32.NewProc("RegOpenKeyExW").Call(hklm, uintptr(unsafe.Pointer(wstr(profiles))), 0,
+			0x0010 /*KEY_NOTIFY*/, uintptr(unsafe.Pointer(&key))); r != 0 {
 			return
 		}
 		for {
@@ -264,7 +278,8 @@ func sameNet(a, b netState) bool {
 		return false
 	}
 	for i := range a.networks {
-		if a.networks[i].name != b.networks[i].name || a.networks[i].category != b.networks[i].category {
+		if a.networks[i].id != b.networks[i].id || a.networks[i].name != b.networks[i].name ||
+			a.networks[i].category != b.networks[i].category {
 			return false
 		}
 	}

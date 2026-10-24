@@ -1,8 +1,8 @@
 # PhoneDrop installer. Put this next to phonedrop.exe and run it in PowerShell:
 #   powershell -ExecutionPolicy Bypass -File .\install.ps1
 # Installs to %LOCALAPPDATA%\PhoneDrop (no admin needed), starts it at sign-in and adds a Start-menu
-# shortcut and a Send to entry. Run it from an *admin* PowerShell to also add the firewall rule (Private networks
-# only); otherwise Windows asks the first time PhoneDrop starts listening.
+# shortcut and a Send to entry. Run it from an *admin* PowerShell to also add the firewall rule (Private and
+# Domain networks only); otherwise Windows asks the first time PhoneDrop starts listening.
 # Rerun to update. Uninstall: .\install.ps1 -Uninstall
 param([switch]$Uninstall)
 $ErrorActionPreference = 'Stop'
@@ -55,8 +55,8 @@ $sc.Save()
 if ($admin) {
     Remove-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue
     New-NetFirewallRule -DisplayName $name -Direction Inbound -Program $exe -Action Allow -Protocol TCP `
-        -Profile Private -Description 'PhoneDrop: paired phones on Private networks' | Out-Null
-    $fw = 'Firewall rule added (Private networks only).'
+        -Profile Private,Domain -Description 'PhoneDrop: paired phones on Private and Domain networks' | Out-Null
+    $fw = 'Firewall rule added (Private and Domain networks only).'
 } else {
     $fw = 'Windows will ask about the firewall once: allow Private networks only.'
 }

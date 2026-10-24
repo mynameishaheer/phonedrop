@@ -262,6 +262,7 @@ func (s *server) place(tmp, dir, name string) (string, error) {
 		os.Remove(final)
 		return "", err
 	}
+	unhideFile(final) // the rename keeps the temp file's hidden attribute
 	return final, nil
 }
 

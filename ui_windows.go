@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -44,7 +45,8 @@ type hit struct {
 }
 
 type ui struct {
-	hwnd  uintptr
+	hwnd  uintptr        // UI thread only; other goroutines use post
+	hwndA atomic.Uintptr // hwnd once the window exists, for post
 	th    theme
 	set   settings
 	scale float32
@@ -71,7 +73,10 @@ type ui struct {
 	qr             [][]bool // the pairing code on screen
 	pairExpires    time.Time
 	confirm        *confirmReq // the request the prompt is showing
-	removeID       string      // phone whose bin was clicked once (a second click removes it)
+	pairWait       string      // name of the phone just allowed, until the server has stored it
+	pairWaitAt     time.Time
+	pairKnown      map[string]bool // phone IDs before that phone was allowed
+	removeID       string          // phone whose bin was clicked once (a second click removes it)
 	removeAt       time.Time
 	hist           *history
 	recent         []historyEntry // shown in the panel
@@ -96,6 +101,14 @@ var theUI *ui
 
 // ---------- state from other goroutines ----------
 
+// post wakes the UI thread; safe from any goroutine. Before the window exists it does nothing:
+// runUI looks at the inbox, the pending prompt and the network state once the window is up.
+func (u *ui) post(m uintptr) {
+	if h := u.hwndA.Load(); h != 0 {
+		postMsg.Call(h, m, 0, 0)
+	}
+}
+
 func (u *ui) setNetwork(st netState, listening []netip.Addr) {
 	u.mu.Lock()
 	u.net, u.netKnown, u.listening = st, true, listening
@@ -103,18 +116,14 @@ func (u *ui) setNetwork(st netState, listening []netip.Addr) {
 		u.listenErr = ""
 	}
 	u.mu.Unlock()
-	if u.hwnd != 0 {
-		postMsg.Call(u.hwnd, wmRefresh, 0, 0)
-	}
+	u.post(wmRefresh)
 }
 
 func (u *ui) setListenErr(err error) {
 	u.mu.Lock()
 	u.listenErr = err.Error()
 	u.mu.Unlock()
-	if u.hwnd != 0 {
-		postMsg.Call(u.hwnd, wmRefresh, 0, 0)
-	}
+	u.post(wmRefresh)
 }
 
 type snap struct {
@@ -484,7 +493,8 @@ func present(hwnd uintptr, c *canvas, x, y int, a float32) {
 	sz := struct{ cx, cy int32 }{int32(c.w), int32(c.h)}
 	src := struct{ x, y int32 }{}
 	blend := uint32(min(255, max(0, int(a*255+0.5))))<<16 | 1<<24 // SourceConstantAlpha, AC_SRC_ALPHA
-	win(user32, "UpdateLayeredWindow", hwnd, 0, ptr(&pt), ptr(&sz), c.dc, ptr(&src), 0, ptr(&blend), 2)
+	win(user32, "UpdateLayeredWindow", hwnd, 0, uintptr(unsafe.Pointer(&pt)), uintptr(unsafe.Pointer(&sz)), c.dc,
+		uintptr(unsafe.Pointer(&src)), 0, uintptr(unsafe.Pointer(&blend)), 2)
 }
 
 // paint redraws the panel and puts it on screen at the current animation state.
@@ -529,9 +539,9 @@ func (u *ui) trayRect() rect {
 	}{hwnd: u.hwnd, uid: 1}
 	id.size = uint32(unsafe.Sizeof(id))
 	var r rect
-	if win(shell32, "Shell_NotifyIconGetRect", ptr(&id), ptr(&r)) != 0 || r.right == 0 {
+	if win(shell32, "Shell_NotifyIconGetRect", uintptr(unsafe.Pointer(&id)), uintptr(unsafe.Pointer(&r))) != 0 || r.right == 0 {
 		var pt struct{ x, y int32 }
-		win(user32, "GetCursorPos", ptr(&pt))
+		win(user32, "GetCursorPos", uintptr(unsafe.Pointer(&pt)))
 		r = rect{pt.x - 8, pt.y - 8, pt.x + 8, pt.y + 8}
 	}
 	return r
@@ -547,10 +557,10 @@ func (u *ui) position(anchor rect, w, h float32) {
 		flags     uint32
 	}{}
 	mi.size = uint32(unsafe.Sizeof(mi))
-	win(user32, "GetMonitorInfoW", mon, ptr(&mi))
+	win(user32, "GetMonitorInfoW", mon, uintptr(unsafe.Pointer(&mi)))
 	var dx, dy uint32 = 96, 96
 	if shcore.Load() == nil {
-		win(shcore, "GetDpiForMonitor", mon, 0, ptr(&dx), ptr(&dy))
+		win(shcore, "GetDpiForMonitor", mon, 0, uintptr(unsafe.Pointer(&dx)), uintptr(unsafe.Pointer(&dy)))
 	}
 	u.scale = float32(dx) / 96
 	s := u.scale
@@ -598,13 +608,22 @@ func (u *ui) hide() {
 	if !u.visible || u.hiding {
 		return
 	}
+	u.hiding, u.animStart, u.hiddenAt = true, time.Now(), time.Now()
 	if u.view == "confirm" { // closing the prompt is a no
 		u.answer(false)
 	}
-	u.hiding, u.animStart, u.hiddenAt = true, time.Now(), time.Now()
 	u.endPairing("")
 	win(user32, "ReleaseCapture")
 	win(user32, "SetTimer", u.hwnd, tAnim, 10, 0)
+}
+
+// hideIfInactive closes the panel when a pairing view ended on its own (code expired, request
+// timed out) while another window has the focus: WM_ACTIVATE left it up for the pairing view
+// only, and it is topmost, so it would otherwise stay on screen until clicked.
+func (u *ui) hideIfInactive() {
+	if u.visible && !u.hiding && win(user32, "GetForegroundWindow") != u.hwnd {
+		u.hide()
+	}
 }
 
 // relayout after switching views: keep the edge nearest the taskbar where it is.
@@ -713,7 +732,7 @@ func pickFolder(start string) (string, bool) {
 	clsid := guid{0xDC1C5A9C, 0xE88A, 0x4DDE, [8]byte{0xA5, 0xA1, 0x60, 0xF8, 0x2A, 0x20, 0xAE, 0xF7}}
 	iid := guid{0xD57C7288, 0xD4AD, 0x4768, [8]byte{0xBE, 0x02, 0x9D, 0x96, 0x95, 0x32, 0xD9, 0x60}}
 	var dlg unsafe.Pointer
-	if r := win(ole32, "CoCreateInstance", ptr(&clsid), 0, 1 /*CLSCTX_INPROC_SERVER*/, ptr(&iid),
+	if r := win(ole32, "CoCreateInstance", uintptr(unsafe.Pointer(&clsid)), 0, 1 /*CLSCTX_INPROC_SERVER*/, uintptr(unsafe.Pointer(&iid)),
 		uintptr(unsafe.Pointer(&dlg))); int32(r) < 0 {
 		return "", false
 	}
@@ -723,12 +742,12 @@ func pickFolder(start string) (string, bool) {
 		shellItemGetDisplayName                                      = 5
 	)
 	var opts uint32
-	comCall(dlg, getOptions, ptr(&opts))
+	comCall(dlg, getOptions, uintptr(unsafe.Pointer(&opts)))
 	comCall(dlg, setOptions, uintptr(opts|0x20|0x40)) // FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM
-	comCall(dlg, setTitle, ptr(wstr("Save received files to")))
+	comCall(dlg, setTitle, uintptr(unsafe.Pointer(wstr("Save received files to"))))
 	iidShellItem := guid{0x43826D1E, 0xE718, 0x42EE, [8]byte{0xBC, 0x55, 0xA1, 0xE2, 0x61, 0xC3, 0x7B, 0xFE}}
 	var folder unsafe.Pointer
-	if win(shell32, "SHCreateItemFromParsingName", ptr(wstr(start)), 0, ptr(&iidShellItem),
+	if win(shell32, "SHCreateItemFromParsingName", uintptr(unsafe.Pointer(wstr(start))), 0, uintptr(unsafe.Pointer(&iidShellItem)),
 		uintptr(unsafe.Pointer(&folder))) == 0 {
 		comCall(dlg, setFolder, uintptr(folder))
 		comRelease(folder)
@@ -797,11 +816,11 @@ func (u *ui) addTray(modify bool) {
 	if modify {
 		op = 1
 	}
-	if win(shell32, "Shell_NotifyIconW", op, ptr(&nid)) == 0 && modify {
-		win(shell32, "Shell_NotifyIconW", 0, ptr(&nid))
+	if win(shell32, "Shell_NotifyIconW", op, uintptr(unsafe.Pointer(&nid))) == 0 && modify {
+		win(shell32, "Shell_NotifyIconW", 0, uintptr(unsafe.Pointer(&nid)))
 	}
 	nid.version = 4
-	win(shell32, "Shell_NotifyIconW", 4, ptr(&nid)) // NIM_SETVERSION
+	win(shell32, "Shell_NotifyIconW", 4, uintptr(unsafe.Pointer(&nid))) // NIM_SETVERSION
 }
 
 // makeTrayIcon draws the Fluent "phone with arrow" glyph in the taskbar's text colour.
@@ -833,13 +852,13 @@ func trayCanvas(size int, col uint32) *canvas {
 
 func (u *ui) menu() {
 	m := win(user32, "CreatePopupMenu")
-	win(user32, "AppendMenuW", m, 0, 1, ptr(wstr("Open")))
-	win(user32, "AppendMenuW", m, 0, 2, ptr(wstr("Settings")))
-	win(user32, "AppendMenuW", m, 0, 3, ptr(wstr("Open received files")))
+	win(user32, "AppendMenuW", m, 0, 1, uintptr(unsafe.Pointer(wstr("Open"))))
+	win(user32, "AppendMenuW", m, 0, 2, uintptr(unsafe.Pointer(wstr("Settings"))))
+	win(user32, "AppendMenuW", m, 0, 3, uintptr(unsafe.Pointer(wstr("Open received files"))))
 	win(user32, "AppendMenuW", m, 0x800, 0, 0) // separator
-	win(user32, "AppendMenuW", m, 0, 4, ptr(wstr("Quit PhoneDrop")))
+	win(user32, "AppendMenuW", m, 0, 4, uintptr(unsafe.Pointer(wstr("Quit PhoneDrop"))))
 	var pt struct{ x, y int32 }
-	win(user32, "GetCursorPos", ptr(&pt))
+	win(user32, "GetCursorPos", uintptr(unsafe.Pointer(&pt)))
 	win(user32, "SetForegroundWindow", u.hwnd)
 	cmd := win(user32, "TrackPopupMenu", m, 0x0100|0x0020|0x0002, uintptr(pt.x), uintptr(pt.y), 0, u.hwnd, 0) // RETURNCMD|BOTTOMALIGN|RIGHTBUTTON
 	win(user32, "DestroyMenu", m)
@@ -892,6 +911,7 @@ func uiProc(hwnd, m, wParam, lParam uintptr) uintptr {
 		return 0
 	case wmRefresh:
 		u.addTray(true) // the tooltip follows the status
+		u.checkPaired()
 		if u.visible && !u.hiding {
 			if u.view == "main" {
 				u.refreshPhones()
@@ -944,7 +964,7 @@ func uiProc(hwnd, m, wParam, lParam uintptr) uintptr {
 				hover       uint32
 			}{flags: 2, hwnd: hwnd}
 			tme.size = uint32(unsafe.Sizeof(tme))
-			win(user32, "TrackMouseEvent", ptr(&tme))
+			win(user32, "TrackMouseEvent", uintptr(unsafe.Pointer(&tme)))
 			u.tracking = true
 		}
 		x, y := lparamXY(lParam, u.scale)
@@ -1024,27 +1044,31 @@ func runUI(u *ui) {
 	for _, name := range []string{"PhoneDropPanel", "PhoneDropToast"} {
 		wc := wndClassEx{wndProc: proc, instance: inst, cursor: cursor, className: wstr(name)}
 		wc.size = uint32(unsafe.Sizeof(wc))
-		registerCls.Call(ptr(&wc))
+		registerCls.Call(uintptr(unsafe.Pointer(&wc)))
 	}
 	const exLayered, exTool, exTopmost, exNoActivate = 0x80000, 0x80, 0x8, 0x08000000
 	const wsPopup = 0x80000000
-	u.hwnd, _, _ = createWindow.Call(exLayered|exTool|exTopmost, ptr(wstr("PhoneDropPanel")), ptr(wstr(appName)),
-		wsPopup, 0, 0, 1, 1, 0, 0, inst, 0)
-	u.toast.hwnd, _, _ = createWindow.Call(exLayered|exTool|exTopmost|exNoActivate, ptr(wstr("PhoneDropToast")),
-		ptr(wstr(appName)), wsPopup, 0, 0, 1, 1, 0, 0, inst, 0)
-	u.taskbarCreated = uint32(win(user32, "RegisterWindowMessageW", ptr(wstr("TaskbarCreated"))))
+	u.hwnd, _, _ = createWindow.Call(exLayered|exTool|exTopmost, uintptr(unsafe.Pointer(wstr("PhoneDropPanel"))),
+		uintptr(unsafe.Pointer(wstr(appName))), wsPopup, 0, 0, 1, 1, 0, 0, inst, 0)
+	u.toast.hwnd, _, _ = createWindow.Call(exLayered|exTool|exTopmost|exNoActivate, uintptr(unsafe.Pointer(wstr("PhoneDropToast"))),
+		uintptr(unsafe.Pointer(wstr(appName))), wsPopup, 0, 0, 1, 1, 0, 0, inst, 0)
+	u.taskbarCreated = uint32(win(user32, "RegisterWindowMessageW", uintptr(unsafe.Pointer(wstr("TaskbarCreated")))))
+	u.hwndA.Store(u.hwnd) // from here on other goroutines' posts arrive (before the tray reads the state)
 	u.addTray(false)
 	u.registerHotkey()
 	if len(u.startFiles) > 0 {
 		u.queueFiles(u.startFiles)
 	}
+	// Anything that arrived before the window existed was posted to nobody: look once now.
+	postMsg.Call(u.hwnd, wmReceived, 0, 0)
+	postMsg.Call(u.hwnd, wmConfirm, 0, 0)
 
 	var m msg
 	for {
-		if r, _, _ := getMessage.Call(ptr(&m), 0, 0, 0); int32(r) <= 0 {
+		if r, _, _ := getMessage.Call(uintptr(unsafe.Pointer(&m)), 0, 0, 0); int32(r) <= 0 {
 			return
 		}
-		win(user32, "TranslateMessage", ptr(&m))
-		dispatchMsg.Call(ptr(&m))
+		win(user32, "TranslateMessage", uintptr(unsafe.Pointer(&m)))
+		dispatchMsg.Call(uintptr(unsafe.Pointer(&m)))
 	}
 }

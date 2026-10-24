@@ -49,8 +49,7 @@ func previewMore(dir string) {
 		u.qr, u.pairExpires = qr, now.Add(102*time.Second)
 		render("pair", u)
 		for _, scale := range []float32{1, 1.25} { // the QR modules must land on whole pixels
-			u.scale = scale
-			u.cv = nil
+			u.scale = scale // (ensureCanvas replaces the canvas when the scale changes)
 			c := u.ensureCanvas(&u.cv, panelW, u.height())
 			u.render(c)
 			c.savePNG(fmt.Sprintf("%s/pair-%s-%.0f.png", dir, name, scale*100))

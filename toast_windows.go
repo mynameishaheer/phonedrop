@@ -44,12 +44,16 @@ type toaster struct {
 	hits         []hit
 }
 
-// isRisky: files Windows would run rather than open; the toast offers only "Show in folder".
-func isRisky(name string) bool {
+// canOpen: types that are safe to open with their default app (media, documents, zip). Anything
+// else (executables, scripts, shortcuts, disk images and whatever Windows may add) gets only
+// "Show in folder": an allowlist, because a denylist always misses something that runs.
+func canOpen(name string) bool {
 	switch strings.ToLower(filepath.Ext(name)) {
-	case ".exe", ".com", ".bat", ".cmd", ".ps1", ".psm1", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh",
-		".msi", ".msp", ".scr", ".pif", ".lnk", ".url", ".hta", ".cpl", ".jar", ".reg", ".inf", ".appx",
-		".msix", ".appinstaller", ".application", ".gadget", ".msc", ".sys", ".dll", ".iso", ".img", ".vhd", ".vhdx":
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif", ".avif", ".bmp", ".tif", ".tiff",
+		".mov", ".mp4", ".m4v", ".mkv", ".webm", ".avi", ".3gp", ".mp3", ".m4a", ".wav", ".aac", ".flac",
+		".pdf", ".txt", ".md", ".rtf", ".csv", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+		".odt", ".ods", ".odp", ".pages", ".numbers", ".key", ".epub",
+		".zip":
 		return true
 	}
 	return false
@@ -118,7 +122,7 @@ func (t *toaster) content() (icon [2]rune, title, sub string, actions []toastAct
 		actions = append(actions, toastAction{"t:open", "Open link"}, toastAction{"t:copy", "Copy"})
 	default:
 		sub = "From " + it.from + " · " + humanSize(it.size)
-		if !isRisky(it.path) {
+		if canOpen(it.path) {
 			actions = append(actions, toastAction{"t:open", "Open"})
 		}
 		actions = append(actions, toastAction{"t:folder", "Show in folder"})
@@ -210,10 +214,10 @@ func (u *ui) showToast(it toastItem) {
 		flags     uint32
 	}{}
 	mi.size = uint32(unsafe.Sizeof(mi))
-	win(user32, "GetMonitorInfoW", mon, ptr(&mi))
+	win(user32, "GetMonitorInfoW", mon, uintptr(unsafe.Pointer(&mi)))
 	var dx, dy uint32 = 96, 96
 	if shcore.Load() == nil {
-		win(shcore, "GetDpiForMonitor", mon, 0, ptr(&dx), ptr(&dy))
+		win(shcore, "GetDpiForMonitor", mon, 0, uintptr(unsafe.Pointer(&dx)), uintptr(unsafe.Pointer(&dy)))
 	}
 	scale := float32(dx) / 96
 	if !u.visible {
@@ -305,7 +309,7 @@ func (u *ui) toastClick(id string) {
 			if strings.HasPrefix(it.text, "https://") || strings.HasPrefix(it.text, "http://") {
 				shellOpen(it.text)
 			}
-		} else if it.path != "" && !isRisky(it.path) {
+		} else if it.path != "" && canOpen(it.path) {
 			shellOpen(it.path)
 		}
 	case "t:folder":
@@ -322,7 +326,8 @@ func showInFolder(path string) {
 		return
 	}
 	args := `/select,"` + path + `"`
-	win(shell32, "ShellExecuteW", 0, ptr(wstr("open")), ptr(wstr("explorer.exe")), ptr(wstr(args)), 0, 1)
+	win(shell32, "ShellExecuteW", 0, uintptr(unsafe.Pointer(wstr("open"))), uintptr(unsafe.Pointer(wstr("explorer.exe"))),
+		uintptr(unsafe.Pointer(wstr(args))), 0, 1)
 }
 
 func toastProc(u *ui, hwnd, m, wParam, lParam uintptr) uintptr {
@@ -346,7 +351,7 @@ func toastProc(u *ui, hwnd, m, wParam, lParam uintptr) uintptr {
 				hover       uint32
 			}{flags: 2, hwnd: hwnd}
 			tme.size = uint32(unsafe.Sizeof(tme))
-			win(user32, "TrackMouseEvent", ptr(&tme))
+			win(user32, "TrackMouseEvent", uintptr(unsafe.Pointer(&tme)))
 			tt.tracking = true
 			win(user32, "KillTimer", hwnd, tToastLife) // stays while hovered
 		}
@@ -414,6 +419,10 @@ func setClipboardText(hwnd uintptr, s string) bool {
 		return false
 	}
 	p := win(kernel32, "GlobalLock", h)
+	if p == 0 {
+		win(kernel32, "GlobalFree", h)
+		return false
+	}
 	win(kernel32, "RtlMoveMemory", p, uintptr(unsafe.Pointer(&u16[0])), uintptr(len(u16)*2))
 	win(kernel32, "GlobalUnlock", h)
 	if win(user32, "SetClipboardData", 13 /*CF_UNICODETEXT*/, h) == 0 {

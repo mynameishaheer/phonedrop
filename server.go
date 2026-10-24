@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/netip"
@@ -276,8 +277,8 @@ func privatePeer(a netip.Addr) bool {
 	return a.IsValid() && (a.IsPrivate() || a.IsLinkLocalUnicast() || a.IsLoopback())
 }
 
-// gatedListener drops connections from non-LAN peers and from IPs in the penalty box before
-// any HTTP parsing happens.
+// gatedListener drops connections from non-LAN peers, from IPs in the penalty box and over the
+// connection caps before any HTTP parsing happens.
 type gatedListener struct {
 	net.Listener
 	gate *gate
@@ -290,16 +291,48 @@ func (l *gatedListener) Accept() (net.Conn, error) {
 			return nil, err
 		}
 		ip := peerIP(c.RemoteAddr().String())
-		if privatePeer(ip) && l.gate.allowed(ip) {
-			return c, nil
+		if privatePeer(ip) && l.gate.allowed(ip) && l.gate.open(ip) {
+			return &countedConn{Conn: c, release: func() { l.gate.closed(ip) }}, nil
 		}
 		c.Close()
 	}
 }
 
+// countedConn gives its connection slot back on the first Close. Wrappers (the sniffer's
+// peekedConn, tls.Server) close through it, so the slot lives exactly as long as the socket.
+type countedConn struct {
+	net.Conn
+	once    sync.Once
+	release func()
+}
+
+func (c *countedConn) Close() error {
+	err := c.Conn.Close()
+	c.once.Do(c.release)
+	return err
+}
+
+// ReadFrom and CloseWrite pass through, so net/http keeps sendfile and its graceful close.
+func (c *countedConn) ReadFrom(r io.Reader) (int64, error) { return io.Copy(c.Conn, r) }
+func (c *countedConn) CloseWrite() error                   { return closeWrite(c.Conn) }
+
+func closeWrite(c net.Conn) error {
+	if cw, ok := c.(interface{ CloseWrite() error }); ok {
+		return cw.CloseWrite()
+	}
+	return nil
+}
+
+// Open connections allowed per peer IP and in total; one phone needs a handful.
+const (
+	maxConnsPerIP = 32
+	maxConnsTotal = 256
+)
+
 // gate counts failed requests per IP. More than maxFails within a window puts the IP in the
 // penalty box: its connections are closed on accept until the box expires. No timers run; state
-// is checked lazily when that IP shows up again.
+// is checked lazily when that IP shows up again. It also caps open connections (open/closed),
+// across all listeners.
 type gate struct {
 	mu       sync.Mutex
 	now      func() time.Time
@@ -307,6 +340,10 @@ type gate struct {
 	window   time.Duration
 	penalty  time.Duration
 	peers    map[netip.Addr]*peerState
+
+	maxPerIP, maxTotal int                // connection caps
+	conns              map[netip.Addr]int // open connections per IP
+	nconns             int                // open connections in all
 }
 
 type peerState struct {
@@ -317,7 +354,29 @@ type peerState struct {
 
 func newGate() *gate {
 	return &gate{now: time.Now, maxFails: 10, window: time.Minute, penalty: 5 * time.Minute,
-		peers: map[netip.Addr]*peerState{}}
+		peers: map[netip.Addr]*peerState{}, maxPerIP: maxConnsPerIP, maxTotal: maxConnsTotal, conns: map[netip.Addr]int{}}
+}
+
+// open takes a connection slot for ip, or reports false if ip or everyone is at the cap.
+func (g *gate) open(ip netip.Addr) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.nconns >= g.maxTotal || g.conns[ip] >= g.maxPerIP {
+		return false
+	}
+	g.conns[ip]++
+	g.nconns++
+	return true
+}
+
+// closed gives back a slot taken by open.
+func (g *gate) closed(ip netip.Addr) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.conns[ip]--; g.conns[ip] <= 0 {
+		delete(g.conns, ip)
+	}
+	g.nconns--
 }
 
 func (g *gate) allowed(ip netip.Addr) bool {

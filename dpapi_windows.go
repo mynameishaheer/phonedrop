@@ -47,13 +47,14 @@ func dpapiCall(proc *syscall.LazyProc, data []byte, protect bool) ([]byte, error
 	}
 	in, ent := blobOf(data), blobOf(dpapiEntropy)
 	var out dataBlob
-	desc := uintptr(0)
+	var desc *uint16
 	if protect {
-		desc = uintptr(unsafe.Pointer(dpapiDescriptor))
+		desc = dpapiDescriptor
 	}
 	// Both functions take (in, description, entropy, reserved, prompt, flags, out); for
 	// CryptUnprotectData the description is an out-parameter we don't want (NULL).
-	r, _, err := proc.Call(ptr(&in), desc, ptr(&ent), 0, 0, cryptprotectUIForbidden, ptr(&out))
+	r, _, err := proc.Call(uintptr(unsafe.Pointer(&in)), uintptr(unsafe.Pointer(desc)),
+		uintptr(unsafe.Pointer(&ent)), 0, 0, cryptprotectUIForbidden, uintptr(unsafe.Pointer(&out)))
 	runtime.KeepAlive(data)
 	if r == 0 {
 		return nil, errors.New(proc.Name + ": " + err.Error())

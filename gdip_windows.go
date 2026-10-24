@@ -67,6 +67,10 @@ var (
 	icSync          = [2]rune{0xF190, 0xF190}
 )
 
+// gp calls a GDI+ flat API function. Pointer arguments must be converted inline at the call
+// (uintptr(unsafe.Pointer(&x))) so the compiler keeps them alive for the call.
+//
+//go:uintptrescapes
 func gp(name string, args ...uintptr) uintptr {
 	p, ok := gdipProcs[name]
 	if !ok {
@@ -78,8 +82,6 @@ func gp(name string, args ...uintptr) uintptr {
 }
 
 func fl(v float32) uintptr { return uintptr(math.Float32bits(v)) }
-
-func ptr[T any](v *T) uintptr { return uintptr(unsafe.Pointer(v)) }
 
 func wstr(s string) *uint16 { p, _ := syscall.UTF16PtrFromString(s); return p }
 
@@ -103,7 +105,7 @@ func gdipInit() {
 		suppressEx int32
 	}{version: 1}
 	var token uintptr
-	gp("GdiplusStartup", ptr(&token), ptr(&in), 0)
+	gp("GdiplusStartup", uintptr(unsafe.Pointer(&token)), uintptr(unsafe.Pointer(&in)), 0)
 
 	regular := []string{"Segoe UI Variable Text", "Segoe UI", "Tahoma"}
 	semibold := []string{"Segoe UI Variable Text Semibold", "Segoe UI Semibold"}
@@ -123,7 +125,7 @@ func gdipInit() {
 		fontTitle = fontSemi
 	}
 
-	gp("GdipNewPrivateFontCollection", ptr(&iconColl))
+	gp("GdipNewPrivateFontCollection", uintptr(unsafe.Pointer(&iconColl)))
 	gp("GdipPrivateAddMemoryFont", iconColl, uintptr(unsafe.Pointer(&iconsRegular[0])), uintptr(len(iconsRegular)))
 	gp("GdipPrivateAddMemoryFont", iconColl, uintptr(unsafe.Pointer(&iconsFilled[0])), uintptr(len(iconsFilled)))
 	fontIcon = newFont([]string{"FluentSystemIcons-Regular"}, iconColl, 20, 0)
@@ -134,10 +136,10 @@ func gdipInit() {
 func newFont(families []string, coll uintptr, size float32, style int) uintptr {
 	for _, name := range families {
 		var fam, f uintptr
-		if gp("GdipCreateFontFamilyFromName", uintptr(unsafe.Pointer(wstr(name))), coll, ptr(&fam)) != 0 {
+		if gp("GdipCreateFontFamilyFromName", uintptr(unsafe.Pointer(wstr(name))), coll, uintptr(unsafe.Pointer(&fam))) != 0 {
 			continue
 		}
-		gp("GdipCreateFont", fam, fl(size), uintptr(style), 2 /*UnitPixel*/, ptr(&f))
+		gp("GdipCreateFont", fam, fl(size), uintptr(style), 2 /*UnitPixel*/, uintptr(unsafe.Pointer(&f)))
 		gp("GdipDeleteFontFamily", fam)
 		if f != 0 {
 			return f
@@ -153,8 +155,8 @@ func format(align, valign int) uintptr {
 		return f
 	}
 	var typo, f uintptr
-	gp("GdipStringFormatGetGenericTypographic", ptr(&typo))
-	gp("GdipCloneStringFormat", typo, ptr(&f))
+	gp("GdipStringFormatGetGenericTypographic", uintptr(unsafe.Pointer(&typo)))
+	gp("GdipCloneStringFormat", typo, uintptr(unsafe.Pointer(&f)))
 	gp("GdipSetStringFormatFlags", f, 0x1000|0x0800) // NoWrap | MeasureTrailingSpaces
 	gp("GdipSetStringFormatTrimming", f, 3)          // EllipsisCharacter
 	gp("GdipSetStringFormatAlign", f, uintptr(align))
@@ -169,6 +171,7 @@ type canvas struct {
 	w, h          int // pixels
 	scale         float32
 	dc, dib, bits uintptr
+	oldBmp        uintptr // the DC's original bitmap, selected back before the DIB is deleted
 	bmp, g        uintptr
 }
 
@@ -185,10 +188,10 @@ func newCanvas(w, h int, scale float32) *canvas {
 		colors               uint32
 	}{width: int32(w), height: -int32(h), planes: 1, bitCount: 32}
 	bmi.size = 40
-	c.dib, _, _ = createDIB.Call(c.dc, ptr(&bmi), 0, ptr(&c.bits), 0, 0)
-	selectObject.Call(c.dc, c.dib)
-	gp("GdipCreateBitmapFromScan0", uintptr(w), uintptr(h), uintptr(w*4), 0x000E200B /*PARGB*/, c.bits, ptr(&c.bmp))
-	gp("GdipGetImageGraphicsContext", c.bmp, ptr(&c.g))
+	c.dib, _, _ = createDIB.Call(c.dc, uintptr(unsafe.Pointer(&bmi)), 0, uintptr(unsafe.Pointer(&c.bits)), 0, 0)
+	c.oldBmp, _, _ = selectObject.Call(c.dc, c.dib)
+	gp("GdipCreateBitmapFromScan0", uintptr(w), uintptr(h), uintptr(w*4), 0x000E200B /*PARGB*/, c.bits, uintptr(unsafe.Pointer(&c.bmp)))
+	gp("GdipGetImageGraphicsContext", c.bmp, uintptr(unsafe.Pointer(&c.g)))
 	gp("GdipSetSmoothingMode", c.g, 4)      // AntiAlias
 	gp("GdipSetPixelOffsetMode", c.g, 2)    // HighQuality
 	gp("GdipSetTextRenderingHint", c.g, 4)  // AntiAlias (grayscale; ClearType needs an opaque target)
@@ -201,6 +204,9 @@ func newCanvas(w, h int, scale float32) *canvas {
 func (c *canvas) free() {
 	gp("GdipDeleteGraphics", c.g)
 	gp("GdipDisposeImage", c.bmp)
+	if c.oldBmp != 0 { // a bitmap still selected into a DC can't be deleted
+		selectObject.Call(c.dc, c.oldBmp)
+	}
 	deleteObject.Call(c.dib)
 	deleteDC.Call(c.dc)
 }
@@ -209,14 +215,14 @@ func (c *canvas) clear() { gp("GdipGraphicsClear", c.g, 0) }
 
 func withBrush(col uint32, f func(b uintptr)) {
 	var b uintptr
-	gp("GdipCreateSolidFill", uintptr(col), ptr(&b))
+	gp("GdipCreateSolidFill", uintptr(col), uintptr(unsafe.Pointer(&b)))
 	f(b)
 	gp("GdipDeleteBrush", b)
 }
 
 func roundPath(r rectF, rad float32) uintptr {
 	var p uintptr
-	gp("GdipCreatePath", 0, ptr(&p))
+	gp("GdipCreatePath", 0, uintptr(unsafe.Pointer(&p)))
 	if rad <= 0 {
 		gp("GdipAddPathRectangle", p, fl(r.X), fl(r.Y), fl(r.W), fl(r.H))
 		return p
@@ -247,7 +253,7 @@ func (c *canvas) stroke(r rectF, rad, w float32, col uint32) {
 	h := w / 2
 	p := roundPath(rectF{r.X + h, r.Y + h, r.W - w, r.H - w}, rad-h)
 	var pen uintptr
-	gp("GdipCreatePen1", uintptr(col), fl(w), 0 /*UnitWorld*/, ptr(&pen))
+	gp("GdipCreatePen1", uintptr(col), fl(w), 0 /*UnitWorld*/, uintptr(unsafe.Pointer(&pen)))
 	gp("GdipDrawPath", c.g, pen, p)
 	gp("GdipDeletePen", pen)
 	gp("GdipDeletePath", p)
@@ -273,7 +279,7 @@ func (c *canvas) text(s string, font uintptr, r rectF, col uint32, align, valign
 	}
 	u, _ := syscall.UTF16FromString(s)
 	withBrush(col, func(b uintptr) {
-		gp("GdipDrawString", c.g, uintptr(unsafe.Pointer(&u[0])), uintptr(len(u)-1), font, ptr(&r), format(align, valign), b)
+		gp("GdipDrawString", c.g, uintptr(unsafe.Pointer(&u[0])), uintptr(len(u)-1), font, uintptr(unsafe.Pointer(&r)), format(align, valign), b)
 	})
 }
 
@@ -283,7 +289,8 @@ func (c *canvas) measure(s string, font uintptr) float32 {
 	}
 	u, _ := syscall.UTF16FromString(s)
 	layout, out := rectF{0, 0, 2000, 200}, rectF{}
-	gp("GdipMeasureString", c.g, uintptr(unsafe.Pointer(&u[0])), uintptr(len(u)-1), font, ptr(&layout), format(0, 0), ptr(&out), 0, 0)
+	gp("GdipMeasureString", c.g, uintptr(unsafe.Pointer(&u[0])), uintptr(len(u)-1), font,
+		uintptr(unsafe.Pointer(&layout)), format(0, 0), uintptr(unsafe.Pointer(&out)), 0, 0)
 	return out.W
 }
 
@@ -311,12 +318,12 @@ func (c *canvas) savePNG(path string) {
 		d2, d3 uint16
 		d4     [8]byte
 	}{0x557cf406, 0x1a04, 0x11d3, [8]byte{0x9a, 0x73, 0x00, 0x00, 0xf8, 0x1e, 0xf3, 0x2e}}
-	gp("GdipSaveImageToFile", c.bmp, uintptr(unsafe.Pointer(wstr(path))), ptr(&clsid), 0)
+	gp("GdipSaveImageToFile", c.bmp, uintptr(unsafe.Pointer(wstr(path))), uintptr(unsafe.Pointer(&clsid)), 0)
 }
 
 func (c *canvas) hicon() uintptr {
 	var h uintptr
-	gp("GdipCreateHICONFromBitmap", c.bmp, ptr(&h))
+	gp("GdipCreateHICONFromBitmap", c.bmp, uintptr(unsafe.Pointer(&h)))
 	return h
 }
 

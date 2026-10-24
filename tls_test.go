@@ -19,6 +19,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -54,15 +55,39 @@ func TestProductionCARanges(t *testing.T) {
 	if !slices.Equal(got, want) || !ca.PermittedDNSDomainsCritical {
 		t.Fatalf("CA permits %v", got)
 	}
+	// The leaf only gets the addresses the CA may certify, so loopback is left out (and the
+	// leaf still verifies for the rest), and a leaf that holds it anyway is refused.
 	m := testTLSManager(t, t.TempDir())
 	m.ca, m.caKey = ca, key
-	m.setAddrs([]netip.Addr{netip.MustParseAddr("127.0.0.1")})
+	m.setAddrs([]netip.Addr{netip.MustParseAddr("127.0.0.1"), netip.MustParseAddr("192.168.18.20"),
+		netip.MustParseAddr("100.64.0.1"), netip.MustParseAddr("fe80::1")})
 	if err := m.issueLocked(); err != nil {
 		t.Fatal(err)
 	}
+	leaf := m.leaf.Load().Leaf
+	var ips []string
+	for _, ip := range leaf.IPAddresses {
+		ips = append(ips, ip.String())
+	}
+	if !slices.Equal(ips, []string{"192.168.18.20", "fe80::1"}) {
+		t.Fatalf("leaf IPs %v", ips)
+	}
 	roots := x509.NewCertPool()
 	roots.AddCert(ca)
-	if _, err := m.leaf.Load().Leaf.Verify(x509.VerifyOptions{Roots: roots, DNSName: "127.0.0.1"}); !verifyErrIsConstraint(err) {
+	for _, name := range []string{testHost, "192.168.18.20"} {
+		if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, DNSName: name}); err != nil {
+			t.Errorf("verify %s: %v", name, err)
+		}
+	}
+	tmpl := &x509.Certificate{SerialNumber: randSerial(), NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, IPAddresses: []net.IP{net.ParseIP("127.0.0.1")}}
+	lk, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca, &lk.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rogue, _ := x509.ParseCertificate(der)
+	if _, err := rogue.Verify(x509.VerifyOptions{Roots: roots, DNSName: "127.0.0.1"}); !verifyErrIsConstraint(err) {
 		t.Fatalf("production CA certified loopback: %v", err)
 	}
 }
@@ -136,7 +161,10 @@ func TestCAAndLeaf(t *testing.T) {
 	if !ca.IsCA || !ca.MaxPathLenZero || ca.MaxPathLen != 0 || ca.KeyUsage != x509.KeyUsageCertSign|x509.KeyUsageCRLSign ||
 		!slices.Equal(ca.PermittedDNSDomains, []string{testHost}) || !ca.PermittedDNSDomainsCritical ||
 		ca.Subject.CommonName != "PhoneDrop CA (testpc.local)" || ca.SerialNumber.BitLen() > 129 ||
-		ca.NotAfter.Sub(ca.NotBefore) < 9*365*24*time.Hour || ca.PublicKeyAlgorithm != x509.ECDSA {
+		ca.NotAfter.Sub(ca.NotBefore) < 9*365*24*time.Hour || ca.PublicKeyAlgorithm != x509.ECDSA ||
+		!slices.Equal(ca.ExtKeyUsage, []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}) ||
+		!slices.Equal(ca.PermittedEmailAddresses, []string{"invalid"}) || !slices.Equal(ca.PermittedURIDomains, []string{"invalid"}) ||
+		len(ca.ExcludedDNSDomains)+len(ca.ExcludedEmailAddresses)+len(ca.ExcludedURIDomains)+len(ca.ExcludedIPRanges) != 0 {
 		t.Fatalf("CA %+v", ca)
 	}
 	critical := false
@@ -176,17 +204,22 @@ func TestCANameConstraints(t *testing.T) {
 	ca := m.caCert()
 	roots := x509.NewCertPool()
 	roots.AddCert(ca)
-	rogue := func(dns []string, ips []net.IP) *x509.Certificate {
+	rogueWith := func(tmpl *x509.Certificate) *x509.Certificate {
 		key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-		tmpl := &x509.Certificate{SerialNumber: randSerial(), Subject: pkix.Name{CommonName: "rogue"},
-			NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
-			ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, DNSNames: dns, IPAddresses: ips}
+		tmpl.SerialNumber, tmpl.Subject = randSerial(), pkix.Name{CommonName: "rogue"}
+		tmpl.NotBefore, tmpl.NotAfter = time.Now().Add(-time.Hour), time.Now().Add(time.Hour)
+		if tmpl.ExtKeyUsage == nil {
+			tmpl.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+		}
 		der, err := x509.CreateCertificate(rand.Reader, tmpl, ca, &key.PublicKey, m.caKey)
 		if err != nil {
 			t.Fatal(err)
 		}
 		c, _ := x509.ParseCertificate(der)
 		return c
+	}
+	rogue := func(dns []string, ips []net.IP) *x509.Certificate {
+		return rogueWith(&x509.Certificate{DNSNames: dns, IPAddresses: ips})
 	}
 	for _, x := range []struct {
 		name string
@@ -203,6 +236,39 @@ func TestCANameConstraints(t *testing.T) {
 		_, err := rogue(x.dns, x.ips).Verify(x509.VerifyOptions{Roots: roots, DNSName: x.name})
 		if !verifyErrIsConstraint(err) {
 			t.Errorf("rogue leaf %v %v: err = %v, want a name-constraint error", x.dns, x.ips, err)
+		}
+	}
+	// Email and URI names: the CA permits only the reserved .invalid, so S/MIME and URI
+	// certificates fail even when the leaf also carries this PC's name.
+	uri, _ := url.Parse("https://example.com/x")
+	for what, tmpl := range map[string]*x509.Certificate{
+		"email":             {DNSNames: []string{testHost}, EmailAddresses: []string{"victim@example.com"}},
+		"email only":        {EmailAddresses: []string{"victim@example.com"}, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageEmailProtection}},
+		"URI":               {DNSNames: []string{testHost}, URIs: []*url.URL{uri}},
+		"email in .invalid": {EmailAddresses: []string{"a@x.invalid"}, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageEmailProtection}},
+	} {
+		c := rogueWith(tmpl)
+		opts := x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}
+		if len(tmpl.DNSNames) > 0 {
+			opts.DNSName = testHost
+		}
+		_, err := c.Verify(opts)
+		if what == "email in .invalid" {
+			if err != nil {
+				t.Errorf("%s: %v (the constraint isn't encoded as expected)", what, err)
+			}
+			continue
+		}
+		if !verifyErrIsConstraint(err) {
+			t.Errorf("rogue %s leaf: err = %v, want a name-constraint error", what, err)
+		}
+	}
+	// Server certificates only: the CA's EKU stops a client-auth or code-signing leaf.
+	for _, eku := range []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageEmailProtection, x509.ExtKeyUsageCodeSigning} {
+		c := rogueWith(&x509.Certificate{DNSNames: []string{testHost}, ExtKeyUsage: []x509.ExtKeyUsage{eku}})
+		var ie x509.CertificateInvalidError
+		if _, err := c.Verify(x509.VerifyOptions{Roots: roots, DNSName: testHost, KeyUsages: []x509.ExtKeyUsage{eku}}); !errors.As(err, &ie) || ie.Reason != x509.IncompatibleUsage {
+			t.Errorf("EKU %v: err = %v, want incompatible usage", eku, err)
 		}
 	}
 	// A subdomain of the host is inside the constraint (harmless: it is still this PC's name).
@@ -367,6 +433,39 @@ func TestCAPersistence(t *testing.T) {
 	m5.setEnabled(true)
 	if m5.fingerprint() != s.caFingerprint() {
 		t.Fatal("reset CA wasn't saved")
+	}
+}
+
+// A CA from before the EKU and email/URI constraints is replaced on load.
+func TestOldCAIsReplaced(t *testing.T) {
+	dir := t.TempDir()
+	m := testTLSManager(t, dir)
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	_, lan, _ := net.ParseCIDR("192.168.0.0/16")
+	tmpl := &x509.Certificate{SerialNumber: randSerial(), Subject: pkix.Name{CommonName: "old"},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(caValidity), IsCA: true,
+		BasicConstraintsValid: true, MaxPathLenZero: true, KeyUsage: x509.KeyUsageCertSign,
+		PermittedDNSDomainsCritical: true, PermittedDNSDomains: []string{testHost}, PermittedIPRanges: []*net.IPNet{lan}}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, _ := x509.ParseCertificate(der)
+	if err := m.saveCA(old, key); err != nil {
+		t.Fatal(err)
+	}
+	if caConstrained(old) {
+		t.Fatal("old CA counted as constrained")
+	}
+	if err := m.setEnabled(true); err != nil {
+		t.Fatal(err)
+	}
+	if ca := m.caCert(); bytes.Equal(ca.Raw, old.Raw) || !caConstrained(ca) {
+		t.Fatal("old CA kept")
+	}
+	m2 := testTLSManager(t, dir) // and the replacement was saved
+	if m2.setEnabled(true); m2.fingerprint() != m.fingerprint() {
+		t.Fatal("replacement CA not saved")
 	}
 }
 
@@ -581,7 +680,7 @@ func TestQRCarriesProfileHash(t *testing.T) {
 		var v json.RawMessage
 		dec.Decode(&v)
 	}
-	if got := strings.Join(keys, ","); got != "pd,name,host,ips,port,id,secret,tls,ca" {
+	if got := strings.Join(keys, ","); got != "pd,name,host,ips,port,base,id,secret,tls,ca" {
 		t.Fatalf("key order %s", got)
 	}
 	var q qrPayload

@@ -416,7 +416,8 @@ func (s *server) outboxList(w http.ResponseWriter, o *outbox, phone string) {
 			continue
 		}
 		size := fi.Size()
-		entries = append(entries, outboxEntry{ID: it.ID, Kind: it.Kind, Name: it.Name, Size: &size,
+		// The stored kind is mediaKind's (for the panel); the phone gets the Photos-safe one.
+		entries = append(entries, outboxEntry{ID: it.ID, Kind: photosKind(it.Name), Name: it.Name, Size: &size,
 			Path: "/v1/outbox/" + it.ID})
 	}
 	reply(w, http.StatusOK, struct {

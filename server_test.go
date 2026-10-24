@@ -3,12 +3,20 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
+	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/netip"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -250,7 +258,7 @@ func TestPairingQRCode(t *testing.T) {
 		var v json.RawMessage
 		dec.Decode(&v)
 	}
-	if got := strings.Join(keys, ","); got != "pd,name,host,ips,port,id,secret" {
+	if got := strings.Join(keys, ","); got != "pd,name,host,ips,port,base,id,secret" {
 		t.Fatalf("key order %s", got)
 	}
 	var q qrPayload
@@ -263,6 +271,9 @@ func TestPairingQRCode(t *testing.T) {
 	qr2, _ := ts.startPairing(pairingInfo{Name: "N", Host: "h.local", IPs: []netip.Addr{}})
 	if !strings.HasPrefix(qr2, `{"pd":1,"name":"N","host":"h.local","ips":[],"port":`) {
 		t.Fatalf("QR with overrides %s", qr2)
+	}
+	if p := itoa(ts.port); !strings.Contains(qr2, `"port":`+p+`,"base":"h.local:`+p+`","id":`) || q.Base != q.Host+":"+p {
+		t.Fatalf("QR base: %s / %s", qr2, q.Base)
 	}
 	if strings.Contains(qr2, q.Secret) || strings.Contains(qr2, q.ID) {
 		t.Fatal("QR codes reuse credentials")
@@ -515,5 +526,237 @@ func TestAuthenticatedRequestsDontCountAsFailures(t *testing.T) {
 		if r := c.do(t, "GET", "/v1/ping", nil); r.code != 200 {
 			t.Fatalf("ping %d: %+v", i, r)
 		}
+	}
+}
+
+// The Shortcuts check success with "Result contains true" (immune to Smart Punctuation), so no
+// error body may contain "true" and every JSON success has "ok":true (PROTOCOL.md §4). Every
+// error message is a literal passed to replyErr; this finds them all in the source (and every
+// reply, whose struct must start with ok = true), and checks the shared error bodies directly.
+func TestErrorBodiesNeverContainTrue(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	n := 0
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		af, err := parser.ParseFile(fset, f, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(af, func(nd ast.Node) bool {
+			call, ok := nd.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			switch fn := call.Fun.(type) {
+			case *ast.Ident:
+				if fn.Name == "reply" && len(call.Args) == 3 { // success: {"ok":true,...}
+					cl, ok := call.Args[2].(*ast.CompositeLit)
+					if !ok || len(cl.Elts) == 0 {
+						t.Errorf("%s: reply body must be a struct literal starting with ok", fset.Position(call.Pos()))
+						return true
+					}
+					if id, ok := cl.Elts[0].(*ast.Ident); !ok || id.Name != "true" && !(id.Name == "false" && f == "server.go") {
+						t.Errorf("%s: a success reply must start with ok: true", fset.Position(call.Pos()))
+					}
+					return true
+				}
+				if fn.Name != "replyErr" || len(call.Args) != 3 {
+					return true
+				}
+			case *ast.SelectorExpr:
+				if x, ok := fn.X.(*ast.Ident); ok && x.Name == "http" && fn.Sel.Name == "Error" {
+					t.Errorf("%s: http.Error bypasses the error-body rule", fset.Position(call.Pos()))
+				}
+				return true
+			default:
+				return true
+			}
+			lit, ok := call.Args[2].(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				t.Errorf("%s: replyErr message must be a string literal", fset.Position(call.Pos()))
+				return true
+			}
+			msg, _ := strconv.Unquote(lit.Value)
+			n++
+			if strings.Contains(msg, "true") {
+				t.Errorf("%s: error %q contains \"true\"", fset.Position(call.Pos()), msg)
+			}
+			return true
+		})
+	}
+	if n < 10 {
+		t.Fatalf("found only %d error messages; is the scan broken?", n)
+	}
+	check := func(what string, f func(w http.ResponseWriter)) {
+		rec := httptest.NewRecorder()
+		f(rec)
+		if b := rec.Body.String(); rec.Code < 400 || strings.Contains(b, "true") {
+			t.Errorf("%s: %d %q", what, rec.Code, b)
+		}
+	}
+	check("deny", deny)
+	check("methodNotAllowed", func(w http.ResponseWriter) { methodNotAllowed(w, "GET") })
+	check("notYet", notYet)
+	for _, err := range []error{errTooLarge, errBodyHash, io.ErrUnexpectedEOF} {
+		check("bodyError "+err.Error(), func(w http.ResponseWriter) { bodyError(w, err) })
+	}
+}
+
+func TestGateConnectionCaps(t *testing.T) {
+	g := newGate()
+	ip, other := netip.MustParseAddr("192.168.1.50"), netip.MustParseAddr("192.168.1.51")
+	for i := 0; i < maxConnsPerIP; i++ {
+		if !g.open(ip) {
+			t.Fatalf("connection %d refused", i+1)
+		}
+	}
+	if g.open(ip) {
+		t.Fatal("33rd connection from one IP allowed")
+	}
+	if !g.open(other) {
+		t.Fatal("another IP refused")
+	}
+	g.closed(ip)
+	if !g.open(ip) {
+		t.Fatal("slot not released")
+	}
+	g = newGate()
+	for i := 0; i < maxConnsTotal; i++ {
+		if !g.open(netip.AddrFrom4([4]byte{10, 0, byte(i / 8), byte(i)})) {
+			t.Fatalf("connection %d refused", i+1)
+		}
+	}
+	if g.open(other) {
+		t.Fatal("connection over the total cap allowed")
+	}
+}
+
+// The slot goes back exactly once, however the connection is wrapped and however often (and
+// from however many goroutines) it is closed.
+func TestCountedConnReleasesOnce(t *testing.T) {
+	g := newGate()
+	ip := netip.MustParseAddr("192.168.1.50")
+	for _, wrap := range []func(net.Conn) net.Conn{
+		func(c net.Conn) net.Conn { return c },
+		func(c net.Conn) net.Conn { return &peekedConn{Conn: c, first: 'G', has: true} },
+		func(c net.Conn) net.Conn {
+			return tls.Server(&peekedConn{Conn: c, first: 0x16, has: true}, &tls.Config{})
+		},
+	} {
+		a, b := net.Pipe()
+		defer b.Close()
+		if !g.open(ip) {
+			t.Fatal("refused")
+		}
+		c := wrap(&countedConn{Conn: a, release: func() { g.closed(ip) }})
+		var wg sync.WaitGroup
+		for i := 0; i < 4; i++ {
+			wg.Add(1)
+			go func() { defer wg.Done(); c.Close() }()
+		}
+		wg.Wait()
+		g.mu.Lock()
+		n, per := g.nconns, g.conns[ip]
+		g.mu.Unlock()
+		if n != 0 || per != 0 {
+			t.Fatalf("after close: %d open, %d for the IP", n, per)
+		}
+	}
+}
+
+// served reports whether a new connection gets an HTTP answer (rather than being closed at
+// accept).
+func served(t *testing.T, addr string) bool {
+	t.Helper()
+	c, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	c.SetDeadline(time.Now().Add(2 * time.Second))
+	io.WriteString(c, "GET / HTTP/1.1\r\nHost: x\r\n\r\n")
+	b := make([]byte, 12)
+	n, _ := io.ReadFull(c, b)
+	return string(b[:n]) == "HTTP/1.1 401"
+}
+
+func TestServerCapsConnectionsPerIP(t *testing.T) {
+	ts := newTestServer(t, nil)
+	ts.gate.mu.Lock()
+	ts.gate.maxFails = 1 << 20 // served's unsigned requests mustn't get us banned
+	ts.gate.mu.Unlock()
+	addr := "127.0.0.1:" + itoa(ts.port)
+	var conns []net.Conn
+	for i := 0; i < maxConnsPerIP; i++ {
+		c, err := net.Dial("tcp", addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		conns = append(conns, c)
+	}
+	// The 33rd is closed at accept; the first 32 are still open.
+	if served(t, addr) {
+		t.Fatal("33rd concurrent connection was served")
+	}
+	conns[0].SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	var ne net.Error
+	if _, err := conns[0].Read(make([]byte, 1)); !errors.As(err, &ne) || !ne.Timeout() {
+		t.Fatalf("an admitted connection was closed: %v", err)
+	}
+	// Closing connections gives their slots back.
+	for _, c := range conns[:3] {
+		c.Close()
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for !served(t, addr) {
+		if time.Now().After(deadline) {
+			t.Fatal("slots not released after close")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	for _, c := range conns[3:] {
+		c.Close()
+	}
+	for time.Now().Before(deadline) {
+		ts.gate.mu.Lock()
+		n := ts.gate.nconns
+		ts.gate.mu.Unlock()
+		if n == 0 {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("connection count didn't return to zero")
+}
+
+// A peer that connects and sends nothing until the sniffer gives up counts as a failure.
+func TestSniffTimeoutCountsAsFailure(t *testing.T) {
+	ts := newTestServer(t, nil)
+	ts.tlsm.dir, ts.tlsm.protect, ts.tlsm.unprotect = t.TempDir(), xorProtect, xorProtect
+	ts.tlsm.sniffTimeout = 100 * time.Millisecond
+	if err := ts.setTLS(true); err != nil {
+		t.Fatal(err)
+	}
+	ts.gate.mu.Lock()
+	ts.gate.maxFails = 0 // the first failure bans
+	ts.gate.mu.Unlock()
+	silent, err := net.Dial("tcp", "127.0.0.1:"+itoa(ts.port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer silent.Close()
+	silent.SetReadDeadline(time.Now().Add(3 * time.Second))
+	if _, err := silent.Read(make([]byte, 1)); err != io.EOF {
+		t.Fatalf("silent client read: %v, want EOF", err)
+	}
+	if ts.gate.allowed(netip.MustParseAddr("127.0.0.1")) {
+		t.Fatal("sniff timeout not counted")
 	}
 }

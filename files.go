@@ -240,12 +240,26 @@ func defaultName(now time.Time, ext string) string {
 	return now.Format("Received 2006-01-02 15.04.05") + ext
 }
 
-// mediaKind classifies by extension: "image", "video" or "file".
+// mediaKind classifies by extension: "image", "video" or "file". It picks icons and history
+// kinds; what the phone is told (photosKind) is narrower.
 func mediaKind(name string) string {
 	switch strings.ToLower(strings.TrimPrefix(filepath.Ext(name), ".")) {
 	case "jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "avif", "bmp", "tif", "tiff":
 		return "image"
 	case "mov", "mp4", "m4v", "avi", "mkv", "webm", "3gp":
+		return "video"
+	}
+	return "file"
+}
+
+// photosKind is the kind the outbox reports to the phone: "image" or "video" only for formats
+// iOS Photos imports, since the Receive shortcut saves those to the photo library; anything else
+// (an mkv, webm or avif) is a "file" and goes to Files instead.
+func photosKind(name string) string {
+	switch strings.ToLower(strings.TrimPrefix(filepath.Ext(name), ".")) {
+	case "jpg", "jpeg", "png", "heic", "heif", "gif", "webp", "tif", "tiff", "bmp":
+		return "image"
+	case "mov", "mp4", "m4v", "3gp":
 		return "video"
 	}
 	return "file"

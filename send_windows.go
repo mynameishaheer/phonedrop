@@ -5,6 +5,8 @@
 package main
 
 import (
+	"errors"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -16,6 +18,7 @@ import (
 
 const (
 	copyDataFiles = 0x5044 // WM_COPYDATA tag: NUL-separated file paths
+	maxSendFiles  = 1000   // per Send to / paste; more is surely a mistake
 	hotkeySend    = 1      // RegisterHotKey id
 	hkMods        = modCtrl | modAlt
 	hkKey         = 'P'
@@ -35,7 +38,7 @@ type sender interface {
 
 // forwardToRunning hands files to an already running PhoneDrop; it reports whether one took them.
 func forwardToRunning(files []string) bool {
-	hwnd := win(user32, "FindWindowW", ptr(wstr("PhoneDropPanel")), 0)
+	hwnd := win(user32, "FindWindowW", uintptr(unsafe.Pointer(wstr("PhoneDropPanel"))), 0)
 	if hwnd == 0 {
 		return false
 	}
@@ -55,12 +58,15 @@ func forwardToRunning(files []string) bool {
 		size uint32
 		ptr  *uint16
 	}{copyDataFiles, uint32(len(buf) * 2), &buf[0]}
-	r := win(user32, "SendMessageW", hwnd, 0x004A /*WM_COPYDATA*/, 0, ptr(&cds))
+	r := win(user32, "SendMessageW", hwnd, 0x004A /*WM_COPYDATA*/, 0, uintptr(unsafe.Pointer(&cds)))
 	return r != 0
 }
 
 // copyDataFilesFrom decodes a WM_COPYDATA from forwardToRunning.
 func copyDataFilesFrom(lParam uintptr) []string {
+	if lParam == 0 {
+		return nil
+	}
 	type copyData struct {
 		data uintptr
 		size uint32
@@ -77,6 +83,9 @@ func copyDataFilesFrom(lParam uintptr) []string {
 		if c == 0 {
 			if i > start {
 				out = append(out, syscall.UTF16ToString(all[start:i]))
+				if len(out) == maxSendFiles {
+					break
+				}
 			}
 			start = i + 1
 		}
@@ -89,23 +98,26 @@ func (u *ui) queueFiles(files []string) {
 	if u.out == nil {
 		return
 	}
-	n, skipped := 0, 0
-	for _, f := range files {
+	n, skipped, first := 0, 0, ""
+	for _, f := range files[:min(len(files), maxSendFiles)] {
 		st, err := os.Stat(f)
 		if err != nil || st.IsDir() {
 			skipped++
 			continue
 		}
 		if err := u.out.addFile(f); err != nil {
-			log.Printf("outbox: %v", err)
+			log.Printf("outbox: couldn't add a file: %v", pathless(err))
 			skipped++
 			continue
+		}
+		if n == 0 {
+			first = f
 		}
 		n++
 	}
 	switch {
 	case n == 1:
-		u.notifyQueued(filepath.Base(files[0]))
+		u.notifyQueued(filepath.Base(first))
 	case n > 1:
 		u.notifyQueued(strconv.Itoa(n) + " files")
 	case skipped > 0:
@@ -116,13 +128,31 @@ func (u *ui) queueFiles(files []string) {
 	}
 }
 
+// pathless strips the file path from an os error, which mustn't go in the log (file names are
+// private); other errors may name the file too, so only a generic word is left of them.
+func pathless(err error) error {
+	var pe *fs.PathError
+	var le *os.LinkError
+	var errno syscall.Errno
+	switch {
+	case errors.As(err, &pe):
+		return pe.Err
+	case errors.As(err, &le):
+		return le.Err
+	case errors.As(err, &errno):
+		return errno
+	}
+	return errors.New("failed")
+}
+
 // notifyQueued confirms with a toast, since Send to and the hotkey have no other feedback.
 func (u *ui) notifyQueued(what string) {
 	u.showToast(toastItem{kind: "queued", title: what + " ready for your phone",
 		text: "Run “Receive from PC” on your iPhone"})
 }
 
-// sendClipboard queues whatever is on the clipboard: files, an image, or text.
+// sendClipboard queues whatever is on the clipboard: files, text, or an image. Text goes before
+// the image, because apps like Excel put both on the clipboard for a copied cell.
 func (u *ui) sendClipboard() {
 	if u.out == nil {
 		return
@@ -141,16 +171,19 @@ func (u *ui) sendClipboard() {
 	case win(user32, "IsClipboardFormatAvailable", 15 /*CF_HDROP*/) != 0:
 		h := win(user32, "GetClipboardData", 15)
 		n := int(win(shell32, "DragQueryFileW", h, 0xFFFFFFFF, 0, 0))
-		for i := 0; i < n && i < 500; i++ {
+		for i := 0; i < n && i < maxSendFiles; i++ {
 			l := win(shell32, "DragQueryFileW", h, uintptr(i), 0, 0)
 			buf := make([]uint16, l+1)
-			win(shell32, "DragQueryFileW", h, uintptr(i), ptr(&buf[0]), l+1)
+			win(shell32, "DragQueryFileW", h, uintptr(i), uintptr(unsafe.Pointer(&buf[0])), l+1)
 			files = append(files, syscall.UTF16ToString(buf))
 		}
-	case win(user32, "IsClipboardFormatAvailable", 2 /*CF_BITMAP*/) != 0:
-		png = bitmapPNG(win(user32, "GetClipboardData", 2))
-	case win(user32, "IsClipboardFormatAvailable", 13 /*CF_UNICODETEXT*/) != 0:
-		text = clipboardText()
+	default:
+		if win(user32, "IsClipboardFormatAvailable", 13 /*CF_UNICODETEXT*/) != 0 {
+			text = clipboardText()
+		}
+		if text == "" && win(user32, "IsClipboardFormatAvailable", 2 /*CF_BITMAP*/) != 0 {
+			png = bitmapPNG(win(user32, "GetClipboardData", 2))
+		}
 	}
 	win(user32, "CloseClipboard")
 	switch {
@@ -159,7 +192,7 @@ func (u *ui) sendClipboard() {
 	case png != nil:
 		name := "Clipboard " + time.Now().Format("2006-01-02 15.04.05") + ".png"
 		if err := u.out.addData(name, png); err != nil {
-			log.Printf("outbox: %v", err)
+			log.Printf("outbox: couldn't keep a clipboard image: %v", pathless(err))
 			u.flashMsg("Couldn't keep the image")
 			return
 		}
@@ -181,14 +214,17 @@ func clipboardText() string {
 	if h == 0 {
 		return ""
 	}
+	n := int(win(kernel32, "GlobalSize", h)) / 2
+	if n < 1 { // 0 (failed) or a single byte: nothing to read
+		return ""
+	}
 	p := win(kernel32, "GlobalLock", h)
 	if p == 0 {
 		return ""
 	}
 	defer win(kernel32, "GlobalUnlock", h)
-	n := int(win(kernel32, "GlobalSize", h)) / 2
 	buf := make([]uint16, n)
-	win(kernel32, "RtlMoveMemory", ptr(&buf[0]), p, uintptr(n*2))
+	win(kernel32, "RtlMoveMemory", uintptr(unsafe.Pointer(&buf[0])), p, uintptr(n*2))
 	return syscall.UTF16ToString(buf)
 }
 
@@ -198,7 +234,7 @@ func bitmapPNG(hbm uintptr) []byte {
 		return nil
 	}
 	var bmp uintptr
-	if gp("GdipCreateBitmapFromHBITMAP", hbm, 0, ptr(&bmp)) != 0 || bmp == 0 {
+	if gp("GdipCreateBitmapFromHBITMAP", hbm, 0, uintptr(unsafe.Pointer(&bmp))) != 0 || bmp == 0 {
 		return nil
 	}
 	defer gp("GdipDisposeImage", bmp)
@@ -209,7 +245,7 @@ func bitmapPNG(hbm uintptr) []byte {
 	path := f.Name()
 	f.Close()
 	defer os.Remove(path)
-	if gp("GdipSaveImageToFile", bmp, ptr(wstr(path)), ptr(&pngEncoder), 0) != 0 {
+	if gp("GdipSaveImageToFile", bmp, uintptr(unsafe.Pointer(wstr(path))), uintptr(unsafe.Pointer(&pngEncoder)), 0) != 0 {
 		return nil
 	}
 	b, _ := os.ReadFile(path)
@@ -227,7 +263,8 @@ func pickFiles() []string {
 	clsid := guid{0xDC1C5A9C, 0xE88A, 0x4DDE, [8]byte{0xA5, 0xA1, 0x60, 0xF8, 0x2A, 0x20, 0xAE, 0xF7}}
 	iid := guid{0xD57C7288, 0xD4AD, 0x4768, [8]byte{0xBE, 0x02, 0x9D, 0x96, 0x95, 0x32, 0xD9, 0x60}}
 	var dlg unsafe.Pointer
-	if r := win(ole32, "CoCreateInstance", ptr(&clsid), 0, 1, ptr(&iid), uintptr(unsafe.Pointer(&dlg))); int32(r) < 0 {
+	if r := win(ole32, "CoCreateInstance", uintptr(unsafe.Pointer(&clsid)), 0, 1, uintptr(unsafe.Pointer(&iid)),
+		uintptr(unsafe.Pointer(&dlg))); int32(r) < 0 {
 		return nil
 	}
 	defer comRelease(dlg)
@@ -236,9 +273,9 @@ func pickFiles() []string {
 		arrayGetCount, arrayGetItemAt, itemGetDisplayName  = 7, 8, 5
 	)
 	var opts uint32
-	comCall(dlg, getOptions, ptr(&opts))
+	comCall(dlg, getOptions, uintptr(unsafe.Pointer(&opts)))
 	comCall(dlg, setOptions, uintptr(opts|0x200|0x40|0x1000)) // ALLOWMULTISELECT | FORCEFILESYSTEM | FILEMUSTEXIST
-	comCall(dlg, setTitle, ptr(wstr("Send to your phone")))
+	comCall(dlg, setTitle, uintptr(unsafe.Pointer(wstr("Send to your phone"))))
 	if comCall(dlg, show, 0) != 0 {
 		return nil
 	}
@@ -248,7 +285,7 @@ func pickFiles() []string {
 	}
 	defer comRelease(arr)
 	var n uint32
-	comCall(arr, arrayGetCount, ptr(&n))
+	comCall(arr, arrayGetCount, uintptr(unsafe.Pointer(&n)))
 	var out []string
 	for i := uint32(0); i < n; i++ {
 		var item unsafe.Pointer

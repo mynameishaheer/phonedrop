@@ -12,7 +12,8 @@ All values below are case-sensitive unless noted. "hex" means lowercase hexadeci
 
 - The laptop listens on TCP port `47474` (configurable) on its IPv4 addresses on networks Windows
   classifies as **Private** or **Domain**. Nothing listens on Public networks.
-- Peers outside private ranges (RFC 1918, link-local, loopback, IPv6 ULA) are dropped at accept.
+- Peers outside private ranges (RFC 1918, link-local, loopback, IPv6 ULA) are dropped at accept,
+  as are connections beyond 32 open per peer IP or 256 in all.
 - The phone addresses the laptop as `http://<hostname>.local:47474` (mDNS). The QR code also
   carries the current IPs as a fallback.
 - Optional TLS (§7): the same port also speaks HTTPS; the server tells them apart by the first
@@ -25,7 +26,7 @@ this JSON (UTF-8, byte mode):
 
 ```json
 {"pd":1,"name":"DESKTOP-AB12CD","host":"desktop-ab12cd.local","ips":["192.168.18.20"],
- "port":47474,"id":"9f2c1a7e5b3d4c60","secret":"<64 hex chars>"}
+ "port":47474,"base":"desktop-ab12cd.local:47474","id":"9f2c1a7e5b3d4c60","secret":"<64 hex chars>"}
 ```
 
 | Field | Meaning |
@@ -35,6 +36,7 @@ this JSON (UTF-8, byte mode):
 | `host` | mDNS name, lower case |
 | `ips` | current private IPv4 addresses, fallback only |
 | `port` | listening port |
+| `base` | `"<host>:<port>"` as a string, so a shortcut builds URLs without formatting a number (which Shortcuts may group by locale, `47,474`) |
 | `id` | the **phone id** this QR code creates: 16 hex chars (64 random bits) |
 | `secret` | the **phone secret**: 64 hex chars (256 random bits) |
 | `tls` | only while encryption is on (§7): `true` |
@@ -65,6 +67,8 @@ sig   = hex( SHA256( secret "|" inner ) )
 - `METHOD` is upper case (`GET`, `POST`). `PATH` is the URL path without query, e.g. `/v1/items`.
 - `TIME`, `NONCE` and `BODY` are the header values exactly as sent.
 - The nested hash keeps it safe from length extension without needing HMAC.
+- The signature doesn't cover `X-PD-Name` or `X-PD-Kind`. Without TLS (§7), someone on the
+  network can rename an upload or change its kind, but never change its content.
 
 The laptop accepts the request only if all of these hold:
 
@@ -78,7 +82,8 @@ The laptop accepts the request only if all of these hold:
 
 Failures 1–4 get **the same response for everything**: `401` with body `unauthorized`, no UI, and
 the IP counts towards a penalty (more than 10 failures a minute: its connections are dropped for
-5 minutes). A request that passes 1–4 is from a paired phone, so it gets a useful JSON error.
+5 minutes). While TLS is on, a connection that sends nothing for 10 s counts as a failure too. A
+request that passes 1–4 is from a paired phone, so it gets a useful JSON error.
 
 ## 4. Responses
 
@@ -88,6 +93,10 @@ Authenticated responses are JSON with `Content-Type: application/json`:
 {"ok": true, ...}
 {"ok": false, "error": "body hash mismatch"}
 ```
+
+A shortcut can test for success with *If Result contains `true`*, which survives Smart
+Punctuation turning `"` into curly quotes: every JSON success contains `"ok":true`, and no error
+body (the JSON errors or the `401` `unauthorized`) ever contains the text `true`.
 
 ## 5. Endpoints
 
@@ -145,8 +154,11 @@ same way (Shortcuts names a text item something like `Text`, with no extension):
 {"id":"c9d0e1f2","kind":"url","text":"https://example.com"}
 ```
 
-`kind` is `image`, `video`, `file`, `text` or `url`. Text and link items carry their content
-inline and are removed from the outbox once listed. File items stay until downloaded.
+`kind` is `image`, `video`, `file`, `text` or `url`. `image` and `video` are only used for
+formats the Photos app imports (jpg, jpeg, png, heic, heif, gif, webp, tif, tiff, bmp; mov, mp4,
+m4v, 3gp), so a shortcut can save them to the photo library; other media (mkv, webm, avi, avif...)
+is a `file`. Text and link items carry their content inline and are removed from the outbox once
+listed. File items stay until downloaded.
 
 ### `GET /v1/outbox/{id}`: download one item
 
@@ -159,17 +171,21 @@ Items expire 24 hours after being added.
 
 The Setup shortcut saves the QR code's JSON to `iCloud Drive/Shortcuts/PhoneDrop/config.json`,
 and every other shortcut reads it from there. Shortcuts has no keychain, so any shortcut can read
-it. The secret is per phone and revocable from the laptop, and on its own it only lets someone
-send files to this laptop while on the same LAN.
+it, and iCloud Drive syncs it to the user's other devices and to iCloud.com. The secret is per
+phone and revocable from the laptop. On its own, and only from the same LAN, it lets the holder
+send files to this laptop and download the outbox (queued files and clipboard text).
 
 ## 7. Optional TLS (beta)
 
 When the user turns on **Encrypt transfers** on the laptop:
 
-- The laptop creates a private CA (ECDSA P-256, its key DPAPI-protected) with **X.509 name
-  constraints**: it may only certify `<host>` (the `.local` name) and the private IP ranges
-  (10/8, 172.16/12, 192.168/16, 169.254/16, fc00::/7, fe80::/10). A leaf certificate for
-  `<host>` and the current IPs is re-issued whenever the IPs change. TLS 1.2 or later.
+- The laptop creates a private CA (ECDSA P-256, its key DPAPI-protected) limited to server
+  certificates (extended key usage `serverAuth`) with **X.509 name constraints**: it may only
+  certify `<host>` (the `.local` name) and the private IP ranges (10/8, 172.16/12, 192.168/16,
+  169.254/16, fc00::/7, fe80::/10), and no email address or URI (both are constrained to the
+  reserved `invalid` domain). A CA made without these is replaced. A leaf certificate for
+  `<host>` and the current IPs inside those ranges is re-issued whenever the IPs change. TLS 1.2
+  or later.
 - `GET /v1/ca.mobileconfig`, signed by a paired phone like any request (`X-PD-Body: -`), returns
   the CA as an iOS configuration profile (`application/x-apple-aspen-config`), or
   `404 {"ok":false,"error":"encryption is off"}`. There is no unauthenticated endpoint. The
@@ -179,8 +195,11 @@ When the user turns on **Encrypt transfers** on the laptop:
   it and turns on full trust (Settings → General → About → Certificate Trust Settings).
 - The phone's config then uses `https://`. Once a phone has made one signed HTTPS request, the
   laptop refuses that phone's plain-HTTP requests (`403 {"ok":false,"error":"use https"}`) while
-  encryption is on. Turning it off accepts plain HTTP from every phone again. The profile
-  download is exempt, so a phone can fetch a new CA (after a reset or a rename) over plain HTTP.
+  encryption is on. The profile download is exempt, so a phone can fetch a new CA (after a reset
+  or a rename) over plain HTTP.
+- Turning encryption off accepts plain HTTP from every phone again, but phones paired while it
+  was on still use `https://` (their config says `"tls":true`) and fail until they are paired
+  again.
 
 Name constraints are what make installing the CA safe: without them, a stolen CA key could
 impersonate any website to that phone. **Check on a real iPhone that iOS enforces them before

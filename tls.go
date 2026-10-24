@@ -44,6 +44,10 @@ const (
 var caIPRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16",
 	"fc00::/7", "fe80::/10"}
 
+// caNoName is the only email domain and URI host a CA may certify: the reserved TLD .invalid
+// (RFC 6761), which names nothing, so a stolen key can't issue S/MIME or URI certificates.
+const caNoName = "invalid"
+
 func tlsDir() string { return filepath.Join(dataDir(), "tls") }
 
 // tlsManager owns the CA, the leaf and the profile window. The leaf is read lock-free by every
@@ -213,6 +217,8 @@ func (m *tlsManager) loadOrCreateLocked() error {
 	switch {
 	case err == nil && caHost(ca) != m.host:
 		log.Printf("tls: computer renamed; making a new CA (phones must install the new profile)")
+	case err == nil && !caConstrained(ca):
+		log.Printf("tls: CA lacks the server-only and email/URI constraints; making a new one (phones must install the new profile)")
 	case err == nil && !m.usable(ca):
 		log.Printf("tls: CA expiring; making a new one (phones must install the new profile)")
 	case err == nil:
@@ -237,7 +243,25 @@ func (m *tlsManager) loadOrCreateLocked() error {
 }
 
 func (m *tlsManager) usable(ca *x509.Certificate) bool {
-	return caHost(ca) == m.host && m.now().Before(ca.NotAfter.Add(-leafRenew))
+	return caHost(ca) == m.host && caConstrained(ca) && m.now().Before(ca.NotAfter.Add(-leafRenew))
+}
+
+// caConstrained: the CA is limited to server certificates and permits no real email address or
+// URI. CAs made by earlier versions lack this and are replaced.
+func caConstrained(ca *x509.Certificate) bool {
+	return slices.Equal(ca.ExtKeyUsage, []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}) &&
+		slices.Equal(ca.PermittedEmailAddresses, []string{caNoName}) &&
+		slices.Equal(ca.PermittedURIDomains, []string{caNoName})
+}
+
+// permittedIP reports whether the CA's name constraints allow ip.
+func permittedIP(ca *x509.Certificate, ip net.IP) bool {
+	for _, n := range ca.PermittedIPRanges {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *tlsManager) loadCA() (*x509.Certificate, *ecdsa.PrivateKey, error) {
@@ -324,8 +348,8 @@ func randSerial() *big.Int {
 	return n.Add(n, big.NewInt(1)) // never zero
 }
 
-// newCA: self-signed, path length 0, and critically name-constrained, so even a stolen key can
-// only vouch for this PC's name and LAN addresses.
+// newCA: self-signed, path length 0, server certificates only, and critically name-constrained,
+// so even a stolen key can only vouch for this PC's name and LAN addresses.
 func newCA(host string, now time.Time, ipRanges []string) (*x509.Certificate, *ecdsa.PrivateKey, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -349,9 +373,12 @@ func newCA(host string, now time.Time, ipRanges []string) (*x509.Certificate, *e
 		MaxPathLen:                  0,
 		MaxPathLenZero:              true,
 		KeyUsage:                    x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		ExtKeyUsage:                 []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		PermittedDNSDomainsCritical: true,
 		PermittedDNSDomains:         []string{host},
 		PermittedIPRanges:           ranges,
+		PermittedEmailAddresses:     []string{caNoName},
+		PermittedURIDomains:         []string{caNoName},
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
 	if err != nil {
@@ -377,7 +404,11 @@ func (m *tlsManager) issueLocked() error {
 	}
 	ips := make([]net.IP, 0, len(m.addrs))
 	for _, a := range m.addrs {
-		ips = append(ips, net.IP(a.Unmap().AsSlice()))
+		// Only what the CA may certify: one address outside its ranges would make clients
+		// reject the whole leaf. (The network watcher filters too; this is the backstop.)
+		if ip := net.IP(a.Unmap().AsSlice()); permittedIP(m.ca, ip) {
+			ips = append(ips, ip)
+		}
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber:          randSerial(),
@@ -431,6 +462,7 @@ func (s *server) httpsOnly(w http.ResponseWriter, r *http.Request, id string) bo
 type sniffListener struct {
 	net.Listener // the gated listener
 	tls          *tlsManager
+	gate         *gate // a peer that connects and sends nothing counts as a failure; may be nil
 	conns        chan net.Conn
 	errs         chan error
 	done         chan struct{}
@@ -443,6 +475,9 @@ type sniffListener struct {
 func newSniffListener(l net.Listener, m *tlsManager) *sniffListener {
 	sl := &sniffListener{Listener: l, tls: m, conns: make(chan net.Conn), errs: make(chan error),
 		done: make(chan struct{}), sniffing: map[net.Conn]struct{}{}}
+	if gl, ok := l.(*gatedListener); ok {
+		sl.gate = gl.gate
+	}
 	go sl.loop()
 	return sl
 }
@@ -527,6 +562,10 @@ func (l *sniffListener) sniff(c net.Conn) {
 	delete(l.sniffing, c)
 	l.mu.Unlock()
 	if err != nil {
+		var ne net.Error
+		if errors.As(err, &ne) && ne.Timeout() && l.gate != nil {
+			l.gate.fail(peerIP(c.RemoteAddr().String()))
+		}
 		c.Close()
 		return
 	}
@@ -555,3 +594,7 @@ func (c *peekedConn) Read(p []byte) (int, error) {
 
 // ReadFrom keeps net/http's sendfile path for large plain-HTTP responses.
 func (c *peekedConn) ReadFrom(r io.Reader) (int64, error) { return io.Copy(c.Conn, r) }
+
+// CloseWrite lets net/http half-close before closing, so a response sent while the request
+// body is still arriving isn't lost to a reset.
+func (c *peekedConn) CloseWrite() error { return closeWrite(c.Conn) }

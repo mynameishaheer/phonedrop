@@ -19,7 +19,7 @@ func (u *ui) received(it receivedItem) {
 	u.mu.Lock()
 	u.inbox = append(u.inbox, it)
 	u.mu.Unlock()
-	postMsg.Call(u.hwnd, wmReceived, 0, 0)
+	u.post(wmReceived)
 }
 
 func (u *ui) drainInbox() {
@@ -118,7 +118,8 @@ func (u *ui) drawRecent(c *canvas, x, y, w float32) {
 	}
 }
 
-// openRecent: files open (risky ones only show in Explorer), links open, text is copied.
+// openRecent: files open (types canOpen doesn't know only show in Explorer), links open, text is
+// copied.
 func (u *ui) openRecent(id string) {
 	folder := strings.HasPrefix(id, "recf:")
 	i, err := strconv.Atoi(id[strings.IndexByte(id, ':')+1:])
@@ -139,7 +140,7 @@ func (u *ui) openRecent(id string) {
 		}
 	case e.Path == "" || !exists(e.Path):
 		return
-	case folder || isRisky(e.Path):
+	case folder || !canOpen(e.Path):
 		showInFolder(e.Path)
 	default:
 		shellOpen(e.Path)
@@ -162,5 +163,5 @@ func (u *ui) sent(it outboxItem, phone string) {
 		u.hist.add(historyEntry{Kind: it.Kind, Name: name, Text: it.Text, Size: it.Size, From: phone,
 			Time: time.Now(), Dir: "out"})
 	}
-	postMsg.Call(u.hwnd, wmReceived, 0, 0) // redraws the Recent list and the count
+	u.post(wmReceived) // redraws the Recent list and the count
 }

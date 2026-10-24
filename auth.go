@@ -348,6 +348,7 @@ func saveStream(body io.Reader, dir string, max int64) (path string, size int64,
 	if err != nil {
 		return "", 0, err
 	}
+	hideFile(f.Name()) // the one place upload temp files are made; place unhides the result
 	size, err = io.Copy(f, io.LimitReader(body, max+1))
 	if err == nil && size > max {
 		err = errTooLarge

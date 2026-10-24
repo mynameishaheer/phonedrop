@@ -316,6 +316,35 @@ func TestOutboxListShapeAndTextDelivery(t *testing.T) {
 	}
 }
 
+// The phone is told image/video only for what Photos imports; the stored kind (icons, history)
+// stays broad.
+func TestOutboxListReportsPhotosKinds(t *testing.T) {
+	e := newOutboxEnv(t)
+	names := []string{"a.HEIC", "b.mkv", "c.webm", "d.avi", "e.avif", "f.MOV", "g.3gp"}
+	for _, n := range names {
+		if err := e.o.addFile(writeTemp(t, e.src, n, []byte("x"))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if l := e.o.list(); l[1].Kind != "video" || l[4].Kind != "image" {
+		t.Fatalf("stored kinds %+v", l)
+	}
+	_, body := e.getBody(t, "/v1/outbox")
+	var parsed struct {
+		Items []struct{ Name, Kind string } `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(body), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, it := range parsed.Items {
+		got = append(got, it.Name+"="+it.Kind)
+	}
+	if s := strings.Join(got, ","); s != "a.HEIC=image,b.mkv=file,c.webm=file,d.avi=file,e.avif=file,f.MOV=video,g.3gp=video" {
+		t.Fatalf("reported kinds %s", s)
+	}
+}
+
 func TestOutboxListDropsVanishedFiles(t *testing.T) {
 	e := newOutboxEnv(t)
 	a := writeTemp(t, e.src, "a.txt", []byte("a"))

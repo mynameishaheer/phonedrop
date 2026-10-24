@@ -72,7 +72,7 @@ func (u *ui) confirmPairing(ctx context.Context, name string) bool {
 	u.mu.Lock()
 	u.pending = req
 	u.mu.Unlock()
-	postMsg.Call(u.hwnd, wmConfirm, 0, 0)
+	u.post(wmConfirm)
 	select {
 	case ok := <-req.reply:
 		return ok
@@ -82,12 +82,12 @@ func (u *ui) confirmPairing(ctx context.Context, name string) bool {
 			u.pending = nil
 		}
 		u.mu.Unlock()
-		postMsg.Call(u.hwnd, wmConfirmGone, 0, 0)
+		u.post(wmConfirmGone)
 		return false
 	}
 }
 
-func (u *ui) phonesChanged() { postMsg.Call(u.hwnd, wmRefresh, 0, 0) }
+func (u *ui) phonesChanged() { u.post(wmRefresh) }
 
 // ---------- UI thread ----------
 
@@ -130,6 +130,7 @@ func (u *ui) tick() {
 	}
 	if !time.Now().Before(u.pairExpires) {
 		u.endPairing("The pairing code expired")
+		u.hideIfInactive()
 		return
 	}
 	u.paint()
@@ -164,12 +165,36 @@ func (u *ui) answer(ok bool) {
 	u.mu.Unlock()
 	if req != nil {
 		req.reply <- ok
-		if ok {
-			u.flashMsg("Paired with " + req.name)
+		if ok { // "Paired with" waits for phonesChanged: the server may still fail to save it
+			u.pairWait, u.pairWaitAt, u.pairKnown = req.name, time.Now(), map[string]bool{}
+			if u.app != nil {
+				for _, p := range u.app.phoneList() {
+					u.pairKnown[p.ID] = true
+				}
+			}
 		}
 	}
 	u.view, u.hover = "main", ""
 	u.relayout()
+	u.hideIfInactive()
+}
+
+// checkPaired (on phonesChanged) confirms the phone allowed in answer once it has been stored.
+func (u *ui) checkPaired() {
+	if u.pairWait == "" || u.app == nil {
+		return
+	}
+	if time.Since(u.pairWaitAt) > time.Minute { // the phone never finished; say nothing
+		u.pairWait, u.pairKnown = "", nil
+		return
+	}
+	for _, p := range u.app.phoneList() {
+		if p.Name == u.pairWait && (!u.pairKnown[p.ID] || !p.Paired.Before(u.pairWaitAt.Add(-time.Second))) {
+			u.pairWait, u.pairKnown = "", nil
+			u.flashMsg("Paired with " + p.Name)
+			return
+		}
+	}
 }
 
 func (u *ui) confirmGone() {
@@ -186,6 +211,7 @@ func (u *ui) confirmGone() {
 		if u.visible && !u.hiding {
 			u.relayout()
 		}
+		u.hideIfInactive()
 	}
 }
 
@@ -195,6 +221,7 @@ func (u *ui) remove(id string) {
 		u.app.removePhone(id)
 		u.removeID = ""
 		u.flashMsg("Removed. It can't send anything now")
+		u.refreshPhones()
 		u.relayout()
 		return
 	}

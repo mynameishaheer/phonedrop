@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"syscall"
 	"time"
+	"unsafe"
 )
 
 func main() {
@@ -22,7 +23,7 @@ func main() {
 	// One instance per sign-in; starting it again (Start menu, Run key) is harmless. Explorer's
 	// Send to starts a second one with file arguments, which it hands to the running one.
 	files := flag.Args()
-	if _, _, err := kernel32.NewProc("CreateMutexW").Call(0, 0, ptr(wstr(`Local\PhoneDrop`))); err == syscall.Errno(183) {
+	if _, _, err := kernel32.NewProc("CreateMutexW").Call(0, 0, uintptr(unsafe.Pointer(wstr(`Local\PhoneDrop`)))); err == syscall.Errno(183) {
 		for i := 0; i < 20 && len(files) > 0 && !forwardToRunning(files); i++ {
 			time.Sleep(250 * time.Millisecond) // it may still be starting
 		}
@@ -45,6 +46,7 @@ func main() {
 	if u.set.Encrypt {
 		if err := srv.setTLS(true); err != nil {
 			log.Printf("encryption: %v", err)
+			u.set.Encrypt = false // not saved: it's retried next start, but the settings page mustn't claim it
 		}
 	}
 	u.onEncrypt = srv.setTLS
@@ -120,6 +122,7 @@ func appIcon(path string) {
 	c.clear()
 	c.fill(rectF{0.5, 0.5, 15, 15}, 3.4, 0xFF0067C0)
 	f := newFont([]string{"FluentSystemIcons-Filled"}, iconColl, 10.5, 0)
+	defer gp("GdipDeleteFont", f)
 	c.icon(icPhoneArrow, true, f, 10.5, rectF{-12, -12, 40, 40}, 0xFFFFFFFF)
 	c.savePNG(path)
 	c.free()

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -52,6 +53,7 @@ type qrPayload struct {
 	Host   string   `json:"host"`
 	IPs    []string `json:"ips"`
 	Port   int      `json:"port"`
+	Base   string   `json:"base"` // "<host>:<port>", so a shortcut never has to format the port number
 	ID     string   `json:"id"`
 	Secret string   `json:"secret"`
 	TLS    bool     `json:"tls,omitempty"` // only when TLS is on (§7)
@@ -98,7 +100,8 @@ func (s *server) startPairing(info pairingInfo) (qrJSON string, expires time.Tim
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
-	q := qrPayload{PD: 1, Name: info.Name, Host: info.Host, IPs: ips, Port: s.port, ID: p.id, Secret: p.secret}
+	q := qrPayload{PD: 1, Name: info.Name, Host: info.Host, IPs: ips, Port: s.port,
+		Base: info.Host + ":" + strconv.Itoa(s.port), ID: p.id, Secret: p.secret}
 	if h := s.caProfileHash(); h != "" {
 		q.TLS, q.CA = true, h
 	}

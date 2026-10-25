@@ -2,6 +2,8 @@
 
 **AirDrop-style sharing between your iPhone and your Windows PC: no iPhone app, one tiny tray exe, nothing running when idle.**
 
+<sub>An independent project, not affiliated with or endorsed by Apple or Microsoft. AirDrop and iPhone are trademarks of Apple Inc.</sub>
+
 [![build](https://github.com/mynameishaheer/phonedrop/actions/workflows/build.yml/badge.svg)](https://github.com/mynameishaheer/phonedrop/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/github/license/mynameishaheer/phonedrop)](LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/mynameishaheer/phonedrop?include_prereleases&sort=semver)](https://github.com/mynameishaheer/phonedrop/releases/latest)
@@ -163,6 +165,32 @@ on Back Tap and on the Action Button. The cost is that the PC can't push to the 
 
 **Windows warns that the app is unsigned.** Yes, it isn't code-signed yet. You can inspect the
 source and build it yourself with `./build.sh`; CI builds the released exe from the tagged commit.
+See [Verifying a download](#verifying-a-download).
+
+**Was this written by AI?** Largely, yes, with a person deciding, testing on real devices and
+reviewing. [docs/HOW-IT-WAS-BUILT.md](docs/HOW-IT-WAS-BUILT.md) says who did what, what was
+checked, and what is still unverified.
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| Panel says **Paused on this network** | Windows calls the Wi-Fi *Public*. Click **Use here** (or make the network Private in Windows settings). |
+| Phone says it can't connect | Same Wi-Fi on both? Some guest and office networks block device-to-device traffic. Check the firewall rule: `.\install.ps1` from an admin terminal adds it. |
+| *A server with the specified hostname could not be found* | `.local` names don't resolve on this network. In Files → iCloud Drive → Shortcuts → PhoneDrop, edit `config.json`: replace the host in `base` with one of the `ips` (keep `:47474`). |
+| Every request fails with *unauthorized* | The PC logs the reason (clock off, unknown phone, signature mismatch) in `%LOCALAPPDATA%\PhoneDrop\phonedrop.log`. A clock more than 90 s off, or a hand-built shortcut with stray spaces around `\|`, are the usual causes. |
+| SmartScreen blocks the exe | **More info → Run anyway**, after [verifying the download](#verifying-a-download). |
+
+## Verifying a download
+
+PhoneDrop is only published at **github.com/mynameishaheer/phonedrop** (and the winget and
+Scoop packages that point there). Each release has a `SHA256SUMS.txt`, and the exe carries a
+GitHub build-provenance attestation that ties it to the commit and CI run that built it:
+
+```powershell
+Get-FileHash .\phonedrop.exe -Algorithm SHA256       # compare with SHA256SUMS.txt
+gh attestation verify .\phonedrop.exe --repo mynameishaheer/phonedrop
+```
 
 ## Contributing
 

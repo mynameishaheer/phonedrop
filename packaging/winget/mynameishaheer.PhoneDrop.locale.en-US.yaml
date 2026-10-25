@@ -1,0 +1,25 @@
+PackageIdentifier: mynameishaheer.PhoneDrop
+PackageVersion: VERSION
+PackageLocale: en-US
+Publisher: mynameishaheer
+PublisherUrl: https://github.com/mynameishaheer
+PackageName: PhoneDrop
+PackageUrl: https://github.com/mynameishaheer/phonedrop
+License: MIT
+LicenseUrl: https://github.com/mynameishaheer/phonedrop/blob/main/LICENSE
+ShortDescription: AirDrop-style sharing between an iPhone and a Windows PC, with no iPhone app.
+Description: |-
+  PhoneDrop is a small tray app that receives photos, videos, files, text and links from an
+  iPhone over your home Wi-Fi, and queues files for the phone to collect. The iPhone side uses
+  Apple Shortcuts (share sheet, Back Tap, Action Button). Paired once by QR code; every request
+  is signed; it listens only on networks you trust. Not affiliated with Apple.
+Tags:
+  - iphone
+  - file-transfer
+  - airdrop-alternative
+  - clipboard
+  - shortcuts
+  - tray
+ReleaseNotesUrl: https://github.com/mynameishaheer/phonedrop/blob/main/CHANGELOG.md
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

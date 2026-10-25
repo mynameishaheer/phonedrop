@@ -1,0 +1,7 @@
+# Version manifest. Fill in VERSION and the SHA-256 from the release's SHA256SUMS.txt, then
+# submit with wingetcreate (see ../README.md).
+PackageIdentifier: mynameishaheer.PhoneDrop
+PackageVersion: VERSION
+DefaultLocale: en-US
+ManifestType: version
+ManifestVersion: 1.6.0

@@ -1,0 +1,23 @@
+{
+    "version": "VERSION",
+    "description": "AirDrop-style sharing between an iPhone and a Windows PC, with no iPhone app.",
+    "homepage": "https://github.com/mynameishaheer/phonedrop",
+    "license": "MIT",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/mynameishaheer/phonedrop/releases/download/vVERSION/phonedrop.exe",
+            "hash": "SHA256_OF_PHONEDROP_EXE"
+        }
+    },
+    "bin": "phonedrop.exe",
+    "shortcuts": [["phonedrop.exe", "PhoneDrop"]],
+    "checkver": "github",
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/mynameishaheer/phonedrop/releases/download/v$version/phonedrop.exe"
+            }
+        },
+        "hash": { "url": "$baseurl/SHA256SUMS.txt" }
+    }
+}

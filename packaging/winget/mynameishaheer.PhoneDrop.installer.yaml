@@ -1,0 +1,12 @@
+PackageIdentifier: mynameishaheer.PhoneDrop
+PackageVersion: VERSION
+InstallerType: portable
+Commands:
+  - phonedrop
+MinimumOSVersion: 10.0.17763.0
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/mynameishaheer/phonedrop/releases/download/vVERSION/phonedrop.exe
+    InstallerSha256: SHA256_OF_PHONEDROP_EXE
+ManifestType: installer
+ManifestVersion: 1.6.0

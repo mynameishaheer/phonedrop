@@ -54,12 +54,12 @@ with nothing to install on the phone and nothing running on the PC when you aren
 |---|---|---|---|---|---|
 | App on the iPhone | **None** (Shortcuts) | Yes | Yes | Yes | None (web page) |
 | On the PC | One tray exe | Built into Windows | App | App | A browser tab |
-| Files iPhone → PC | Yes | Not on iPhone | Yes | Yes | Yes |
+| Files iPhone → PC | Yes | Rolling out; often unreliable | Yes | Yes (discontinued) | Yes |
 | Open source | Yes (MIT) | No | Yes | No | Yes |
 | Platforms | iPhone + Windows only | Android, limited iPhone | Most | Was iPhone/Android + Windows | Anything with a browser |
 
-Intel Unison has been discontinued. Phone Link on iPhone covers calls, messages and
-notifications rather than files. LocalSend and PairDrop are excellent and far more general; pick
+Intel Unison was discontinued in 2025. Phone Link's iPhone file sharing has been rolling out
+since late 2024 and is often reported as failing from iPhone to PC. LocalSend and PairDrop are excellent and far more general; pick
 them if you need other platforms, or if installing an app or keeping a tab open doesn't bother
 you. (Details change; check each project for its current state.)
 

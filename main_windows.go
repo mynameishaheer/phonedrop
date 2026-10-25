@@ -84,7 +84,7 @@ func preview(dir string) {
 	appIcon(dir + `\app-icon.png`)
 	previewMore(dir)
 
-	home := network{name: "HomeNet", category: catPrivate, addrs: []netip.Addr{netip.MustParseAddr("192.168.18.20")}}
+	home := network{name: "HomeNet", category: catPrivate, addrs: []netip.Addr{netip.MustParseAddr("192.168.1.20")}}
 	cafe := network{name: "Café Wi-Fi", category: catPublic, addrs: []netip.Addr{netip.MustParseAddr("10.20.0.7")}}
 	states := map[string]snap{
 		"ready":   {known: true, net: netState{networks: []network{home}}, listening: home.addrs},

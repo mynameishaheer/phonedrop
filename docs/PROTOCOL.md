@@ -28,7 +28,7 @@ The tray panel's **Pair** button opens a 2-minute pairing window and shows a QR 
 this JSON (UTF-8, byte mode):
 
 ```json
-{"pd":1,"name":"DESKTOP-AB12CD","host":"desktop-ab12cd.local","ips":["192.168.18.20"],
+{"pd":1,"name":"DESKTOP-AB12CD","host":"desktop-ab12cd.local","ips":["192.168.1.20"],
  "port":47474,"base":"desktop-ab12cd.local:47474","id":"9f2c1a7e5b3d4c60","secret":"<64 hex chars>"}
 ```
 

@@ -12,7 +12,7 @@ func previewMore(dir string) {
 		{ID: "a1", Name: "Shaheer’s iPhone", Paired: now.AddDate(0, 0, -3), LastSeen: now.Add(-5 * time.Minute)},
 		{ID: "b2", Name: "iPad", Paired: now.AddDate(0, -1, 0), LastSeen: now.AddDate(0, 0, -6)},
 	}
-	qrJSON := `{"pd":1,"name":"DESKTOP-AB12CD","host":"desktop-ab12cd.local","ips":["192.168.18.20"],` +
+	qrJSON := `{"pd":1,"name":"DESKTOP-AB12CD","host":"desktop-ab12cd.local","ips":["192.168.1.20"],` +
 		`"port":47474,"id":"9f2c1a7e5b3d4c60","secret":"` + "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" + `"}`
 	qr, _ := qrEncode([]byte(qrJSON))
 	for _, dark := range []bool{true, false} {

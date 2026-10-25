@@ -1,0 +1,44 @@
+name: Feature request
+description: Suggest an improvement
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        PhoneDrop stays small on purpose: one tray exe, standard library only, no iPhone app, and
+        nothing running when idle. Ideas that fit those rules are the easiest to say yes to. Check
+        [docs/ROADMAP.md](https://github.com/mynameishaheer/phonedrop/blob/main/docs/ROADMAP.md) first;
+        it may already be planned.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the problem or situation, not just the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like PhoneDrop to do?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+  - type: dropdown
+    id: side
+    attributes:
+      label: Which part would change?
+      options:
+        - Windows tray app
+        - iPhone shortcuts
+        - Protocol (needs both)
+        - Docs
+        - Not sure
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Contributing
+      options:
+        - label: I'd be willing to work on this myself.

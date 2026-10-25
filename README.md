@@ -1,10 +1,27 @@
 # PhoneDrop
 
-AirDrop-style sharing between an **iPhone** and a **Windows PC** over your home Wi-Fi.
+**AirDrop-style sharing between your iPhone and your Windows PC: no iPhone app, one tiny tray exe, nothing running when idle.**
+
+[![build](https://github.com/mynameishaheer/phonedrop/actions/workflows/build.yml/badge.svg)](https://github.com/mynameishaheer/phonedrop/actions/workflows/build.yml)
+[![License: MIT](https://img.shields.io/github/license/mynameishaheer/phonedrop)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/mynameishaheer/phonedrop?include_prereleases&sort=semver)](https://github.com/mynameishaheer/phonedrop/releases/latest)
+[![Go version](https://img.shields.io/github/go-mod/go-version/mynameishaheer/phonedrop)](go.mod)
+
+<!--
+  DEMO GIF (record before launch, then uncomment the line below and delete this comment).
+  Save it as docs/media/demo.gif, ideally under 3 MB and about 800 px wide. Show, in about 10
+  seconds with no cuts: share a photo from the iPhone share sheet -> "Send to PC", then the toast
+  on the PC with Open / Show in folder. If you can fit it, add the other direction: right-click a
+  file on the PC -> Send to -> PhoneDrop, then "Receive from PC" on the phone. A screen recording
+  of the phone (QuickTime or Control Center) next to a Windows screen capture, side by side,
+  works well. A static screenshot of the tray panel (docs/media/panel.png) also helps.
+
+  <p align="center"><img src="docs/media/demo.gif" alt="Sending a photo from an iPhone to a Windows PC with PhoneDrop" width="720"></p>
+-->
 
 - **No iPhone app.** Send from the share sheet, Back Tap, the Action Button, Control Center or
   Siri, using shortcuts you build once in Apple's Shortcuts app.
-- **One small tray app on the PC.** Single 6 MB exe, no browser engine, no runtime, no
+- **One small tray app on the PC.** Single 7 MB exe, no browser engine, no runtime, no
   background polling: it uses no CPU while idle.
 - **Only your phone can send.** Phone and PC are paired once with a QR code and confirmed on
   both sides; strangers on the same Wi-Fi get a bare `401` and never a pop-up.
@@ -28,6 +45,24 @@ drivers can't speak, so PhoneDrop uses your normal network instead. Both devices
 the same Wi-Fi, and the PC must be awake. There are no push notifications to the phone (that
 would need an App Store app), so you collect PC → phone items by running a shortcut.
 
+## Why PhoneDrop?
+
+Other tools do more, or do it on more platforms. PhoneDrop's niche is narrow: **iPhone ↔ Windows,
+with nothing to install on the phone and nothing running on the PC when you aren't using it.**
+
+| | PhoneDrop | Microsoft Phone Link | LocalSend | Intel Unison | PairDrop / Snapdrop |
+|---|---|---|---|---|---|
+| App on the iPhone | **None** (Shortcuts) | Yes | Yes | Yes | None (web page) |
+| On the PC | One tray exe | Built into Windows | App | App | A browser tab |
+| Files iPhone → PC | Yes | Not on iPhone | Yes | Yes | Yes |
+| Open source | Yes (MIT) | No | Yes | No | Yes |
+| Platforms | iPhone + Windows only | Android, limited iPhone | Most | Was iPhone/Android + Windows | Anything with a browser |
+
+Intel Unison has been discontinued. Phone Link on iPhone covers calls, messages and
+notifications rather than files. LocalSend and PairDrop are excellent and far more general; pick
+them if you need other platforms, or if installing an app or keeping a tab open doesn't bother
+you. (Details change; check each project for its current state.)
+
 ## Install
 
 **PC (Windows 10 or 11)**
@@ -46,9 +81,11 @@ would need an App Store app), so you collect PC → phone items by running a sho
 
 **iPhone**
 
-Build the shortcuts with the step-by-step guide: **[docs/SHORTCUTS.md](docs/SHORTCUTS.md)**
-(about 20 minutes, once). Then on the PC click **Pair**, run **PhoneDrop Setup** on the iPhone,
-scan the code, and click **Allow** on the PC.
+Import the ready-made shortcuts (iCloud links coming with v1.0), or build them by hand with
+**[docs/SHORTCUTS.md](docs/SHORTCUTS.md)** (about 20 minutes, once). Until the iCloud links
+exist, importing means signing the files on a Mac; see [shortcuts/README.md](shortcuts/README.md).
+Then on the PC click **Pair**, run **PhoneDrop Setup** on the iPhone, scan the code, and click
+**Allow** on the PC.
 
 Uninstall: `.\install.ps1 -Uninstall`. Your settings and paired phones stay in
 `%LOCALAPPDATA%\PhoneDrop` until you delete that folder.
@@ -95,6 +132,57 @@ phonedrop.exe -preview <folder>  # renders every panel state to PNGs, no windows
 ```
 
 Code map: [docs/DEV.md](docs/DEV.md). Wire protocol: [docs/PROTOCOL.md](docs/PROTOCOL.md).
+
+## FAQ
+
+**Is this AirDrop?** No. AirDrop uses Apple's private Wi-Fi link (AWDL), which Windows can't
+speak. PhoneDrop sends over your normal network and gives you similar one-tap sharing.
+
+**Does it work away from my home Wi-Fi?** It works on any network where both devices can reach
+each other and Windows calls the network *Private* (home, and most offices that allow device to
+device traffic). It does not work across the internet or between different networks yet; a relay
+for that is on the [roadmap](docs/ROADMAP.md).
+
+**Is it safe on public Wi-Fi?** By default PhoneDrop doesn't listen at all on networks Windows
+calls *Public*, so there is nothing to attack. If you click **Use here** on one, only your paired
+phone can send, but without *Encrypt transfers* (beta) other people on that network could read
+what you send. Prefer your own network.
+
+**Does it work with Android?** Not today. The shortcuts are for iOS, and the PC app only knows
+the PhoneDrop protocol. The protocol is plain HTTP and fully documented in
+[docs/PROTOCOL.md](docs/PROTOCOL.md), so a client for another phone is possible; contributions
+welcome.
+
+**Does it work on a Mac?** There's no macOS app, and a Mac already has AirDrop. The server is a
+Windows tray app.
+
+**Why Shortcuts instead of an app?** An App Store app means a developer account, review, and a
+constantly running background service on the phone. Shortcuts already live in the share sheet,
+on Back Tap and on the Action Button. The cost is that the PC can't push to the phone: you run
+**Receive from PC** to collect.
+
+**Windows warns that the app is unsigned.** Yes, it isn't code-signed yet. You can inspect the
+source and build it yourself with `./build.sh`; CI builds the released exe from the tagged commit.
+
+## Contributing
+
+Bug reports, ideas and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md);
+issues labelled
+[good first issue](https://github.com/mynameishaheer/phonedrop/labels/good%20first%20issue) are a
+good way in. Questions go in
+[Discussions](https://github.com/mynameishaheer/phonedrop/discussions). Security problems: see
+[SECURITY.md](SECURITY.md), not a public issue.
+
+## Roadmap
+
+Details in [docs/ROADMAP.md](docs/ROADMAP.md); changes so far in [CHANGELOG.md](CHANGELOG.md).
+
+- **v1.0**: first stable release.
+- **iCloud shortcut links**: one-tap install of all six shortcuts, no Mac or signing needed.
+- **Optional push notifications** via [ntfy](https://ntfy.sh), so the phone can learn that
+  something is waiting without opening Shortcuts.
+- **Relay for off-LAN sending**, for when the phone and PC aren't on the same network.
+- **Encryption out of beta**, once name-constraint enforcement is verified on real iPhones.
 
 ## Licence
 

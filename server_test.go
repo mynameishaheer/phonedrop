@@ -63,7 +63,7 @@ func TestGateWindowResets(t *testing.T) {
 
 func TestPrivatePeer(t *testing.T) {
 	for addr, want := range map[string]bool{
-		"192.168.18.5": true, "10.1.2.3": true, "172.16.0.9": true, "169.254.10.10": true,
+		"192.168.1.5": true, "10.1.2.3": true, "172.16.0.9": true, "169.254.10.10": true,
 		"fd12::1": true, "fe80::1": true, "127.0.0.1": true,
 		"8.8.8.8": false, "100.64.0.1": false, "2001:4860::8888": false,
 	} {

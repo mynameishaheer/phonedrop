@@ -59,7 +59,7 @@ func TestProductionCARanges(t *testing.T) {
 	// leaf still verifies for the rest), and a leaf that holds it anyway is refused.
 	m := testTLSManager(t, t.TempDir())
 	m.ca, m.caKey = ca, key
-	m.setAddrs([]netip.Addr{netip.MustParseAddr("127.0.0.1"), netip.MustParseAddr("192.168.18.20"),
+	m.setAddrs([]netip.Addr{netip.MustParseAddr("127.0.0.1"), netip.MustParseAddr("192.168.1.20"),
 		netip.MustParseAddr("100.64.0.1"), netip.MustParseAddr("fe80::1")})
 	if err := m.issueLocked(); err != nil {
 		t.Fatal(err)
@@ -69,12 +69,12 @@ func TestProductionCARanges(t *testing.T) {
 	for _, ip := range leaf.IPAddresses {
 		ips = append(ips, ip.String())
 	}
-	if !slices.Equal(ips, []string{"192.168.18.20", "fe80::1"}) {
+	if !slices.Equal(ips, []string{"192.168.1.20", "fe80::1"}) {
 		t.Fatalf("leaf IPs %v", ips)
 	}
 	roots := x509.NewCertPool()
 	roots.AddCert(ca)
-	for _, name := range []string{testHost, "192.168.18.20"} {
+	for _, name := range []string{testHost, "192.168.1.20"} {
 		if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, DNSName: name}); err != nil {
 			t.Errorf("verify %s: %v", name, err)
 		}
@@ -153,7 +153,7 @@ func verifyErrIsConstraint(err error) bool {
 
 func TestCAAndLeaf(t *testing.T) {
 	m := testTLSManager(t, t.TempDir())
-	m.setAddrs([]netip.Addr{netip.MustParseAddr("127.0.0.1"), netip.MustParseAddr("192.168.18.20")})
+	m.setAddrs([]netip.Addr{netip.MustParseAddr("127.0.0.1"), netip.MustParseAddr("192.168.1.20")})
 	if err := m.setEnabled(true); err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func TestCAAndLeaf(t *testing.T) {
 	}
 	roots := x509.NewCertPool()
 	roots.AddCert(ca)
-	for _, name := range []string{testHost, "127.0.0.1", "192.168.18.20"} {
+	for _, name := range []string{testHost, "127.0.0.1", "192.168.1.20"} {
 		if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, DNSName: name}); err != nil {
 			t.Errorf("verify %s: %v", name, err)
 		}

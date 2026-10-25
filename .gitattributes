@@ -1,0 +1,13 @@
+# Binary files: never touch line endings or try to diff them.
+*.shortcut binary
+*.ttf      binary
+*.syso     binary
+*.png      binary
+
+# Source and docs always use LF, whatever the checkout platform.
+*.sh  text eol=lf
+*.go  text eol=lf
+*.md  text eol=lf
+
+# PowerShell scripts are edited and run on Windows.
+*.ps1 text eol=crlf

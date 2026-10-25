@@ -252,7 +252,7 @@ func qrDecode(t *testing.T, m [][]bool) []byte {
 }
 
 func TestQRRoundTrip(t *testing.T) {
-	json := `{"pd":1,"name":"DESKTOP-AB12CD","host":"desktop-ab12cd.local","ips":["192.168.18.20"],"port":47474,` +
+	json := `{"pd":1,"name":"DESKTOP-AB12CD","host":"desktop-ab12cd.local","ips":["192.168.1.20"],"port":47474,` +
 		`"id":"9f2c1a7e5b3d4c60","secret":"` + strings.Repeat("0123456789abcdef", 4) + `"}`
 	cases := [][]byte{nil, []byte("A"), []byte("Shaheer’s iPhone ✓"), []byte(json), bytes.Repeat([]byte{0xFF, 0}, 140)}
 	for v := 1; v <= 40; v++ { // exactly full symbol of every version

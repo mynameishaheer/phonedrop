@@ -32,7 +32,17 @@ for f in "${files[@]}"; do
     name="$(basename "$f")"
     out="$out_dir/$name"
     rm -f "$out"
-    if log="$(shortcuts sign --mode anyone --input "$f" --output "$out" 2>&1)" && [ -s "$out" ]; then
+    # Apple's signing service fails some requests at random (error 500): try up to 3 times.
+    signed_ok=0
+    for attempt in 1 2 3; do
+        rm -f "$out"
+        if log="$(shortcuts sign --mode anyone --input "$f" --output "$out" 2>&1)" && [ -s "$out" ]; then
+            signed_ok=1
+            break
+        fi
+        [ "$attempt" -lt 3 ] && sleep 3
+    done
+    if [ "$signed_ok" -eq 1 ]; then
         echo "signed   $name"
         ok=$((ok + 1))
     else

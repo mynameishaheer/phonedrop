@@ -14,6 +14,7 @@ All notable changes to PhoneDrop are documented here. The format follows
 
 ### Changed
 - The Go module path is now `github.com/mynameishaheer/phonedrop`.
+- Shorter, more visual docs: README with screenshots, plus new `docs/FAQ.md` and `docs/SECURITY-MODEL.md`.
 
 ## [0.9.2] - 2026-10-24
 

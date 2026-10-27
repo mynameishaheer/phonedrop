@@ -206,4 +206,4 @@ When the user turns on **Encrypt transfers** on the laptop:
 
 Name constraints are what make installing the CA safe: without them, a stolen CA key could
 impersonate any website to that phone. **Check on a real iPhone that iOS enforces them before
-relying on this mode** (see the README).
+relying on this mode** (see [SECURITY-MODEL.md](SECURITY-MODEL.md)).

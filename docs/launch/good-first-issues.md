@@ -157,34 +157,7 @@ Discuss the approach in the issue before a large change. Read
 
 ---
 
-## 7. Register an uninstall entry in Settings > Apps  `[enhancement]`
-
-**Title:** Show PhoneDrop in Settings > Apps so it can be uninstalled from there
-
-**Body:**
-
-`install.ps1` can uninstall with `-Uninstall`, but PhoneDrop doesn't appear in Windows
-**Settings → Apps → Installed apps**.
-
-**What to do**
-
-- In `install.ps1`, write a per-user key under
-  `HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\PhoneDrop` with `DisplayName`,
-  `DisplayVersion`, `Publisher`, `DisplayIcon`, `InstallLocation` and an `UninstallString` that
-  runs the uninstall.
-- That means the uninstaller has to be reachable after the download folder is gone: copy
-  `install.ps1` next to the exe on install.
-- Remove the key in `-Uninstall`.
-
-**Done when:** after install the app appears in Settings > Apps, and **Uninstall** there removes
-the exe, shortcuts, Run entry and the registry key. No admin rights needed.
-
-Note `install.ps1` uses CRLF line endings (see `.gitattributes`). Needs Windows to test.
-Read [CONTRIBUTING.md](../../.github/CONTRIBUTING.md) first.
-
----
-
-## 8. Show the version in the panel  `[enhancement]`
+## 7. Show the version in the panel  `[enhancement]`
 
 **Title:** Show the PhoneDrop version in the panel
 

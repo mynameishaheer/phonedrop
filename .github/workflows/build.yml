@@ -36,6 +36,7 @@ jobs:
   installer:
     needs: build
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - uses: actions/download-artifact@v4
@@ -62,8 +63,12 @@ jobs:
       - name: Smoke-test the installer
         shell: pwsh
         run: |
-          $p = Start-Process dist\PhoneDrop-Setup.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=startup' -Wait -PassThru
+          # Not -Wait: in pwsh that also waits for children, and setup leaves PhoneDrop running.
+          $p = Start-Process dist\PhoneDrop-Setup.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=startup' -PassThru
+          if (-not $p.WaitForExit(180000)) { throw "setup timed out" }
           if ($p.ExitCode -ne 0) { throw "setup exited with $($p.ExitCode)" }
+          Start-Sleep 3
+          if (-not (Get-Process phonedrop -ErrorAction SilentlyContinue)) { throw "PhoneDrop didn't start after setup" }
           $exe = "$env:LOCALAPPDATA\Programs\PhoneDrop\phonedrop.exe"
           $sendTo = Join-Path ([Environment]::GetFolderPath('SendTo')) 'PhoneDrop (to phone).lnk'
           $start = Join-Path ([Environment]::GetFolderPath('Programs')) 'PhoneDrop.lnk'
@@ -71,8 +76,11 @@ jobs:
           foreach ($f in $exe, $sendTo, $start) { if (-not (Test-Path $f)) { throw "missing $f" } }
           if ($run -ne "`"$exe`"") { throw "Run key is '$run'" }
           Write-Host "installed OK"
-          $u = Start-Process "$env:LOCALAPPDATA\Programs\PhoneDrop\unins000.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES' -Wait -PassThru
-          Start-Sleep 10
+          $u = Start-Process "$env:LOCALAPPDATA\Programs\PhoneDrop\unins000.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES' -PassThru
+          [void]$u.WaitForExit(120000)
+          # The uninstaller relaunches itself from a temp folder, so give that copy time to finish.
+          for ($i = 0; $i -lt 30 -and (Test-Path $exe); $i++) { Start-Sleep 2 }
+          Start-Sleep 3
           foreach ($f in $exe, $sendTo, $start) { if (Test-Path $f) { throw "uninstall left $f" } }
           if ((Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run').PhoneDrop) { throw "uninstall left the Run key" }
           Write-Host "uninstalled OK"

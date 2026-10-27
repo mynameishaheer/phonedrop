@@ -1,7 +1,6 @@
 # PhoneDrop: developer notes
 
-Internal architecture and conventions. The wire protocol is in [PROTOCOL.md](PROTOCOL.md); it is
-the contract, so read it first.
+Architecture and conventions. The wire protocol, [PROTOCOL.md](PROTOCOL.md), is the contract: read it first.
 
 ## Ground rules
 
@@ -10,10 +9,8 @@ the contract, so read it first.
 - One `package main`, in `cmd/phonedrop/`. Files ending `_windows.go` are Windows-only (UI, Win32, DPAPI, COM).
   Everything else is **portable** and must build and test on Linux: `go test ./...`.
   `main_other.go` gives non-Windows builds a stub `main`.
-- Build the exe with `scripts/build.sh` (runs tests, then `GOOS=windows` cross-compile).
-  Also check `GOOS=windows go vet .` passes.
-- Idle must cost nothing: no polling loops, no tickers while the panel is hidden. Blocking
-  accepts/waits only; expiry is checked lazily when state is next touched.
+- Build with `scripts/build.sh` (runs tests, then a `GOOS=windows` cross-compile). Also check `GOOS=windows go vet .` passes.
+- Idle must cost nothing: no polling loops, no tickers while the panel is hidden. Block on accepts and waits; check expiry lazily.
 - Never buffer a whole received file in memory; stream to disk.
 - Never log secrets, signatures, file names or text contents. `log.Printf` goes to
   `%LOCALAPPDATA%\PhoneDrop\phonedrop.log` (see `log.go`).
@@ -59,3 +56,19 @@ type appHooks interface {
 
 Secrets at rest go through `protect`/`unprotect func([]byte) ([]byte, error)`: DPAPI
 (`CryptProtectData`, user scope) on Windows, identity in tests.
+
+## Portable / scripted install
+
+The normal install is **PhoneDrop-Setup.exe** (see the [README](../README.md#install)). Each release also has the plain `phonedrop.exe` and `install.ps1` (source: `scripts/install.ps1`) for a per-user, scripted install with no installer.
+
+1. Download both files from the [latest release](../../../releases/latest) into one folder.
+2. Right-click the folder background → **Open in Terminal**, then run:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\install.ps1
+   ```
+
+3. From an *admin* terminal it also adds the firewall rule. Otherwise Windows asks once: allow **Private networks** only.
+4. To remove it: `.\install.ps1 -Uninstall`. Settings and paired phones stay in `%LOCALAPPDATA%\PhoneDrop` until you delete that folder.
+
+It installs to `%LOCALAPPDATA%\PhoneDrop` (no admin needed), starts at sign-in, and adds a Start-menu entry and the **Send to** entry. Re-run it to update.

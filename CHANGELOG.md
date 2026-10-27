@@ -6,19 +6,26 @@ All notable changes to PhoneDrop are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-10-27
+
+First published release. The app itself is unchanged from the 0.9.2 build of 24 Oct.
+
 ### Added
+- **PhoneDrop-Setup.exe**: a normal Windows installer. Per-user, no admin, Start menu and Send to
+  entries, optional start at sign-in and firewall rule, uninstall from Settings → Apps. Releases also
+  carry the portable `phonedrop.exe`, `install.ps1`, `SHA256SUMS.txt` and build-provenance attestations.
 - Community files: contributing guide, code of conduct, security policy, issue forms and a pull
   request template.
 - `docs/ROADMAP.md` and a README with a comparison table, FAQ and roadmap.
 - `.gitattributes` so line endings and binary files behave on every platform.
 
 ### Changed
+- Code moved to `cmd/phonedrop/`, scripts to `scripts/`; `install.ps1` now installs to
+  `%LOCALAPPDATA%\Programs\PhoneDrop`, like the installer.
 - The Go module path is now `github.com/mynameishaheer/phonedrop`.
 - Shorter, more visual docs: README with screenshots, plus new `docs/FAQ.md` and `docs/SECURITY-MODEL.md`.
 
-## [0.9.2] - 2026-10-24
-
-First public version. Everything below exists today; the protocol is v1.
+**What the app does** (first built 24 Oct; the protocol is v1):
 
 ### Added
 - **Windows tray app**: a single small exe (Go, standard library only, no cgo, no browser

@@ -1,13 +1,15 @@
 # PhoneDrop installer. Put this next to phonedrop.exe and run it in PowerShell:
 #   powershell -ExecutionPolicy Bypass -File .\install.ps1
-# Installs to %LOCALAPPDATA%\PhoneDrop (no admin needed), starts it at sign-in and adds a Start-menu
-# shortcut and a Send to entry. Run it from an *admin* PowerShell to also add the firewall rule (Private and
+# The scripted alternative to PhoneDrop-Setup.exe: installs to the same place, %LOCALAPPDATA%\Programs\PhoneDrop
+# (no admin needed), starts it at sign-in and adds a Start-menu shortcut and a Send to entry.
+# Run it from an *admin* PowerShell to also add the firewall rule (Private and
 # Domain networks only); otherwise Windows asks the first time PhoneDrop starts listening.
 # Rerun to update. Uninstall: .\install.ps1 -Uninstall
 param([switch]$Uninstall)
 $ErrorActionPreference = 'Stop'
 $name = 'PhoneDrop'
-$dir = Join-Path $env:LOCALAPPDATA $name
+$dir = Join-Path $env:LOCALAPPDATA "Programs\$name"
+$data = Join-Path $env:LOCALAPPDATA $name  # settings and paired phones
 $exe = Join-Path $dir 'phonedrop.exe'
 $lnk = Join-Path ([Environment]::GetFolderPath('Programs')) 'PhoneDrop.lnk'
 $sendTo = Join-Path ([Environment]::GetFolderPath('SendTo')) 'PhoneDrop (to phone).lnk'
@@ -23,13 +25,15 @@ if ($Uninstall) {
     Remove-Item $lnk, $sendTo -ErrorAction SilentlyContinue
     if ($admin) { Remove-NetFirewallRule -DisplayName $name, "$name (trusted Public networks)" -ErrorAction SilentlyContinue }
     Remove-Item $exe -ErrorAction SilentlyContinue
-    Write-Host "Removed PhoneDrop. Settings and paired phones are still in $dir; delete that folder to forget them."
+    Write-Host "Removed PhoneDrop. Settings and paired phones are still in $data; delete that folder to forget them."
     return
 }
 
 $src = Join-Path $PSScriptRoot 'phonedrop.exe'
 if (-not (Test-Path $src)) { throw "phonedrop.exe isn't next to this script ($PSScriptRoot)." }
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
+# Older versions put the exe in the data folder.
+Remove-Item (Join-Path $data 'phonedrop.exe') -ErrorAction SilentlyContinue
 # Copy beside it, then swap in; Windows can hold the old exe for a moment after the process exits.
 Copy-Item -Force $src "$exe.new"
 for ($i = 0; $i -lt 20; $i++) {

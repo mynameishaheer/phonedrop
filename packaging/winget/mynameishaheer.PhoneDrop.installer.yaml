@@ -1,12 +1,15 @@
 PackageIdentifier: mynameishaheer.PhoneDrop
 PackageVersion: VERSION
-InstallerType: portable
-Commands:
-  - phonedrop
+InstallerType: inno
+Scope: user
+InstallModes:
+  - interactive
+  - silent
+UpgradeBehavior: install
 MinimumOSVersion: 10.0.17763.0
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/mynameishaheer/phonedrop/releases/download/vVERSION/phonedrop.exe
-    InstallerSha256: SHA256_OF_PHONEDROP_EXE
+    InstallerUrl: https://github.com/mynameishaheer/phonedrop/releases/download/vVERSION/PhoneDrop-Setup.exe
+    InstallerSha256: SHA256_OF_PHONEDROP_SETUP_EXE
 ManifestType: installer
 ManifestVersion: 1.6.0

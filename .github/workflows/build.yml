@@ -7,18 +7,17 @@ on:
   pull_request:
 
 permissions:
-  contents: write     # attach the exe to tagged releases
-  id-token: write     # build-provenance attestation
-  attestations: write
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.24"
+          cache: false # stdlib only: no go.sum to key a cache on
       - name: Check formatting
         run: test -z "$(gofmt -l .)"
       - name: Vet
@@ -27,24 +26,97 @@ jobs:
         run: go test -race ./...
       - name: Build phonedrop.exe
         run: scripts/build.sh
-      - name: Checksums
-        run: sha256sum phonedrop.exe install.ps1 > SHA256SUMS.txt && cat SHA256SUMS.txt
-      - name: Attest build provenance
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: phonedrop.exe
       - uses: actions/upload-artifact@v4
         with:
-          name: phonedrop
+          name: exe
           path: |
             phonedrop.exe
-            install.ps1
-            SHA256SUMS.txt
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/v')
+            scripts/install.ps1
+
+  installer:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: exe
+      - name: Version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF_NAME#v}"; else
+            v=$(sed -n 's/^\s*version\s*=\s*"\([0-9.]*\)".*/\1/p' cmd/phonedrop/settings.go); fi
+          echo "APP_VERSION=$v" >> "$GITHUB_ENV"
+          echo "version $v"
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+      - name: Build PhoneDrop-Setup.exe
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$env:APP_VERSION" packaging\inno\phonedrop.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Smoke-test the installer
+        shell: pwsh
+        run: |
+          $p = Start-Process dist\PhoneDrop-Setup.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=startup' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "setup exited with $($p.ExitCode)" }
+          $exe = "$env:LOCALAPPDATA\Programs\PhoneDrop\phonedrop.exe"
+          $sendTo = Join-Path ([Environment]::GetFolderPath('SendTo')) 'PhoneDrop (to phone).lnk'
+          $start = Join-Path ([Environment]::GetFolderPath('Programs')) 'PhoneDrop.lnk'
+          $run = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run').PhoneDrop
+          foreach ($f in $exe, $sendTo, $start) { if (-not (Test-Path $f)) { throw "missing $f" } }
+          if ($run -ne "`"$exe`"") { throw "Run key is '$run'" }
+          Write-Host "installed OK"
+          $u = Start-Process "$env:LOCALAPPDATA\Programs\PhoneDrop\unins000.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES' -Wait -PassThru
+          Start-Sleep 10
+          foreach ($f in $exe, $sendTo, $start) { if (Test-Path $f) { throw "uninstall left $f" } }
+          if ((Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run').PhoneDrop) { throw "uninstall left the Run key" }
+          Write-Host "uninstalled OK"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer
+          path: dist/PhoneDrop-Setup.exe
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, installer]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write     # create the release
+      id-token: write     # build-provenance attestation
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+      - name: Collect files and checksums
+        run: |
+          mkdir rel
+          cp out/installer/PhoneDrop-Setup.exe out/exe/phonedrop.exe out/exe/scripts/install.ps1 rel/
+          cd rel && sha256sum PhoneDrop-Setup.exe phonedrop.exe install.ps1 > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            rel/PhoneDrop-Setup.exe
+            rel/phonedrop.exe
+      - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          gh release create "$GITHUB_REF_NAME" phonedrop.exe install.ps1 SHA256SUMS.txt --title "PhoneDrop $GITHUB_REF_NAME" --notes "See README for setup." || \
-          gh release upload "$GITHUB_REF_NAME" phonedrop.exe install.ps1 SHA256SUMS.txt --clobber
+          pre=""; [[ "$GITHUB_REF_NAME" == v0.* ]] && pre="--prerelease"
+          cat > notes.md <<'EOF'
+          **Windows:** download **PhoneDrop-Setup.exe** below and double-click it. No admin rights needed.
+          Windows SmartScreen may warn because the app isn't code-signed yet: click **More info**, then **Run anyway**.
+
+          **iPhone:** see [the setup guide](https://github.com/mynameishaheer/phonedrop#install).
+
+          Advanced: `phonedrop.exe` and `install.ps1` are the portable version. `SHA256SUMS.txt` lists the checksums,
+          and `gh attestation verify PhoneDrop-Setup.exe --repo mynameishaheer/phonedrop` checks the file was built here.
+          EOF
+          gh release create "$GITHUB_REF_NAME" rel/* --title "PhoneDrop $GITHUB_REF_NAME" --notes-file notes.md $pre || \
+            gh release upload "$GITHUB_REF_NAME" rel/* --clobber

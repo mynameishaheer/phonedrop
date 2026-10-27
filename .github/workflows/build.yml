@@ -111,7 +111,10 @@ jobs:
             v=$(sed -n 's/^\s*version\s*=\s*"\([0-9.]*\)".*/\1/p' cmd/phonedrop/settings.go); fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
           if [[ "$GITHUB_REF" != refs/tags/v* ]] && gh release view "v$v" >/dev/null 2>&1; then
-            echo "v$v is already released; nothing to do"; echo "skip=true" >> "$GITHUB_OUTPUT"
+            # Keep it a full release marked Latest: GitHub hides pre-releases from the sidebar
+            # and from /releases/latest, which the README's download link uses.
+            gh release edit "v$v" --prerelease=false --latest
+            echo "v$v is already released"; echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/download-artifact@v4
         if: steps.plan.outputs.skip != 'true'
@@ -133,7 +136,6 @@ jobs:
         if: steps.plan.outputs.skip != 'true'
         run: |
           v="${{ steps.plan.outputs.version }}"; tag="v$v"
-          pre=""; [[ "$v" == 0.* ]] && pre="--prerelease"
           cat > notes.md <<'EOF'
           **Windows:** download **PhoneDrop-Setup.exe** below and double-click it. No admin rights needed.
           Windows SmartScreen may warn because the app isn't code-signed yet: click **More info**, then **Run anyway**.
@@ -153,5 +155,5 @@ jobs:
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" rel/* --clobber
           else
-            gh release create "$tag" rel/* --target "$GITHUB_SHA" --title "PhoneDrop $tag" --notes-file notes.md $pre
+            gh release create "$tag" rel/* --target "$GITHUB_SHA" --title "PhoneDrop $tag" --notes-file notes.md --latest
           fi

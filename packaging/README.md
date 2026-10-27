@@ -15,8 +15,7 @@
 
 CI notices the new version has no release yet. It builds `PhoneDrop-Setup.exe`, the portable
 `phonedrop.exe`, `install.ps1` and `SHA256SUMS.txt`, attests both exes, then creates the tag and the
-release. The title is `PhoneDrop vX.Y.Z` and the notes are that CHANGELOG section. `0.*` versions are
-marked pre-release. Pushing a `v*` tag yourself also works.
+release. The title is `PhoneDrop vX.Y.Z` and the notes are that CHANGELOG section. Pushing a `v*` tag yourself also works.
 
 ## winget (do this at v1.0)
 

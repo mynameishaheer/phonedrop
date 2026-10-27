@@ -119,8 +119,9 @@ Code map per file: `docs/DEV.md`. Protocol details: `docs/PROTOCOL.md`.
 - Job `installer` (Windows): Inno Setup through choco if missing, builds `PhoneDrop-Setup.exe`,
   then **smoke-tests** it: silent install, check the files and the Run key, silent uninstall,
   check it all went.
-- Job `release`: only on a `v*` tag. Writes `SHA256SUMS.txt`, adds provenance attestations for
-  both exes, creates the GitHub release (`v0.*` tags are pre-releases).
+- Job `release`: on a push to `main` whose version has no release yet (or on a pushed `v*` tag).
+  Writes `SHA256SUMS.txt`, adds provenance attestations for both exes, and creates the tag and
+  release with notes from CHANGELOG.md (`0.*` versions are pre-releases).
 
 **CI history:**
 - `11a88c3` (the folder move) failed: the Checksums step still pointed at `install.ps1` in the root.
@@ -132,7 +133,7 @@ Code map per file: `docs/DEV.md`. Protocol details: `docs/PROTOCOL.md`.
   `/actions/runs/<id>/jobs` for the failed step. `gh run view --log` is blocked in the cloud
   sandbox; use the jobs API and `check-runs/<job id>/annotations`.
 
-**No release has been published yet.** CI on `main` is green (build, installer compile, silent install/uninstall smoke test, run 40562636453). `v0.9.2` is waiting for the owner to create the tag; see §6 item 3.
+**No release has been published yet.** CI on `main` is green (build, installer compile, silent install/uninstall smoke test, run 40562636453). Releases are published automatically; see §6 item 3.
 
 **Docs rewrite: committed** with this page. A Sonnet agent shortened every doc and added the
 screenshots. Leftovers it flagged:
@@ -148,7 +149,7 @@ screenshots. Leftovers it flagged:
 |---|---|---|---|
 | 1 | Make sure CI is green on `main` | Agent | See §5. The build job, checkout@v5, setup-go@v6, Inno Setup and the compile all work. Only the smoke test is unproven. |
 | 2 | Re-check the docs | Agent | Optional: README is 160 lines; the owner wants it short. |
-| 3 | Publish `v0.9.2` | Owner | `main` is ready and the CHANGELOG is done (commit `9fa6cb2`). **The cloud sandbox can't push tags or create releases** (HTTP 403 from the git proxy and the API). So the owner does it: on GitHub, Releases → Draft a new release → type tag `v0.9.2` (create on publish, target `main`) → tick pre-release → Publish. Or run `git tag v0.9.2 && git push origin v0.9.2` on the laptop. The tag starts CI, and its `release` job uploads PhoneDrop-Setup.exe, phonedrop.exe, install.ps1 and SHA256SUMS.txt to the release (`gh release upload --clobber` if it already exists). Then check the four files are there. |
+| 3 | Check the `v0.9.2` release | Agent | Releases are now automatic. On every push to `main`, the `release` job checks whether `v<version>` (from `cmd/phonedrop/settings.go`) has a release yet. If not, it creates the tag and the release, titled `PhoneDrop vX.Y.Z`. The notes are that version's CHANGELOG section plus install instructions. The files are PhoneDrop-Setup.exe, phonedrop.exe, install.ps1 and SHA256SUMS.txt, with attestations. `0.*` versions are marked pre-release. The commit that made this change should have published v0.9.2; check it on the Releases page. **To release a new version:** bump `version` in settings.go and `winres.json` (regenerate the .syso), add a CHANGELOG `## [X.Y.Z]` section, push. The cloud sandbox itself can't push tags, which is why the job doesn't rely on one. |
 | 4 | Owner tests PhoneDrop-Setup.exe on the laptop | Owner | **Not tested on real Windows yet.** Not yet seen on a real machine: the firewall task (it runs `netsh` through `runas`, one UAC prompt), upgrading over an old `install.ps1` install, the finish-page text, SmartScreen behaviour, and Send to working from the new path. |
 | 5 | Owner signs and tests the shortcuts | Owner | Regenerate with `python3 -I shortcuts/build.py`, zip the `shortcuts/` folder, and the owner runs `sign-all.sh` on the Mac. Needs testing on the device: the regenerated **Send to PC** and **Receive from PC**, and the If-value fix. **Send Latest Screenshot** failed to sign earlier with a 500; the fix was retries (Apple fails at random). If it still fails, bisect with `probes.py`. |
 | 6 | **Rename the product** | Owner decides | At least 7 GitHub repos are called PhoneDrop, including ImSammyTTV/PhoneDrop, an iPhone↔Windows tray app released in Oct 2026. Candidates: **TossPad** (recommended), HopSend, PocketPipe, SlingPC, PocketBeam. The owner must first run the USPTO/EUIPO and app-store name checks. The rename touches the module path, `appName`, the data folder (needs a migration so paired phones survive), the installer's AppName (keep the same AppId GUID), the shortcuts (folder `PhoneDrop/` in iCloud, shortcut names), all docs and the repo name. |

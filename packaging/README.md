@@ -8,14 +8,15 @@
 
 ## Releasing
 
-```sh
-git tag v0.9.3 && git push origin v0.9.3
-```
+1. Bump `version` in `cmd/phonedrop/settings.go` and `cmd/phonedrop/winres/winres.json`
+   (then regenerate the `.syso`; the command is in `scripts/build.sh`).
+2. Add a `## [X.Y.Z] - date` section to `CHANGELOG.md`.
+3. Push to `main`.
 
-CI builds `PhoneDrop-Setup.exe`, the portable `phonedrop.exe`, `install.ps1` and `SHA256SUMS.txt`,
-attests both exes and publishes the release (`v0.*` tags are marked pre-release). Keep the
-`version` constant in `cmd/phonedrop/settings.go` and `cmd/phonedrop/winres/winres.json` in step
-with the tag.
+CI notices the new version has no release yet. It builds `PhoneDrop-Setup.exe`, the portable
+`phonedrop.exe`, `install.ps1` and `SHA256SUMS.txt`, attests both exes, then creates the tag and the
+release. The title is `PhoneDrop vX.Y.Z` and the notes are that CHANGELOG section. `0.*` versions are
+marked pre-release. Pushing a `v*` tag yourself also works.
 
 ## winget (do this at v1.0)
 

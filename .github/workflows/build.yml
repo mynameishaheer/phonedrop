@@ -89,42 +89,69 @@ jobs:
           name: installer
           path: dist/PhoneDrop-Setup.exe
 
+  # Publishes a release automatically: on a push to main whose version (cmd/phonedrop/settings.go)
+  # has no release yet, or on a pushed v* tag. Releasing = bump the version + add a CHANGELOG entry.
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push'
     needs: [build, installer]
     runs-on: ubuntu-latest
     permissions:
-      contents: write     # create the release
+      contents: write     # create the tag and release
       id-token: write     # build-provenance attestation
       attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
     steps:
+      - uses: actions/checkout@v5
+      - name: Decide
+        id: plan
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF_NAME#v}"; else
+            v=$(sed -n 's/^\s*version\s*=\s*"\([0-9.]*\)".*/\1/p' cmd/phonedrop/settings.go); fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" != refs/tags/v* ]] && gh release view "v$v" >/dev/null 2>&1; then
+            echo "v$v is already released; nothing to do"; echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/download-artifact@v4
+        if: steps.plan.outputs.skip != 'true'
         with:
           path: out
       - name: Collect files and checksums
+        if: steps.plan.outputs.skip != 'true'
         run: |
           mkdir rel
           cp out/installer/PhoneDrop-Setup.exe out/exe/phonedrop.exe out/exe/scripts/install.ps1 rel/
           cd rel && sha256sum PhoneDrop-Setup.exe phonedrop.exe install.ps1 > SHA256SUMS.txt && cat SHA256SUMS.txt
       - uses: actions/attest-build-provenance@v2
+        if: steps.plan.outputs.skip != 'true'
         with:
           subject-path: |
             rel/PhoneDrop-Setup.exe
             rel/phonedrop.exe
       - name: Create the release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
+        if: steps.plan.outputs.skip != 'true'
         run: |
-          pre=""; [[ "$GITHUB_REF_NAME" == v0.* ]] && pre="--prerelease"
+          v="${{ steps.plan.outputs.version }}"; tag="v$v"
+          pre=""; [[ "$v" == 0.* ]] && pre="--prerelease"
           cat > notes.md <<'EOF'
           **Windows:** download **PhoneDrop-Setup.exe** below and double-click it. No admin rights needed.
           Windows SmartScreen may warn because the app isn't code-signed yet: click **More info**, then **Run anyway**.
 
           **iPhone:** see [the setup guide](https://github.com/mynameishaheer/phonedrop#install).
 
+          EOF
+          # This version's CHANGELOG section, without its heading.
+          awk -v h="## [$v]" 'index($0, h) == 1 { on = 1; next } on && /^## \[/ { exit } on' CHANGELOG.md >> notes.md
+          cat >> notes.md <<'EOF'
+
+          ---
           Advanced: `phonedrop.exe` and `install.ps1` are the portable version. `SHA256SUMS.txt` lists the checksums,
           and `gh attestation verify PhoneDrop-Setup.exe --repo mynameishaheer/phonedrop` checks the file was built here.
           EOF
-          gh release create "$GITHUB_REF_NAME" rel/* --title "PhoneDrop $GITHUB_REF_NAME" --notes-file notes.md $pre || \
-            gh release upload "$GITHUB_REF_NAME" rel/* --clobber
+          cat notes.md
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" rel/* --clobber
+          else
+            gh release create "$tag" rel/* --target "$GITHUB_SHA" --title "PhoneDrop $tag" --notes-file notes.md $pre
+          fi

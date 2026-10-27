@@ -163,6 +163,7 @@ screenshots. Leftovers it flagged:
 | 14 | One human security review | Owner | Before marketing the security story. |
 | 15 | Verify the TLS beta on an iPhone | Owner | Does iOS enforce X.509 name constraints on user-installed roots? |
 | 16 | Node 20 deprecation in CI | Agent | `upload-artifact`/`download-artifact@v4` still run on Node 20; bump when Node 24 versions are confirmed. |
+| 17 | **Bug: pairing hangs on the owner's office laptop** | Agent + owner | Reported 27 Oct. QR scanned, Setup stuck at its last step, no Allow prompt on the PC, "same network". So the phone's `POST /v1/pair` never reached the app. Likely causes: office Wi-Fi client isolation; phone and laptop on different VLANs or SSIDs, or the laptop on Ethernet; a corporate firewall policy that ignores local rules; a VPN; `.local` not resolving (mDNS blocked); or the laptop's IP outside RFC 1918, which `privatePeer` drops silently. Owner diagnostics: does the panel say Ready? What do `phonedrop.log`'s `network … category=` and `listening on` lines say? Does `http://<laptop IP>:47474/v1/ping` load anything in iPhone Safari? Any reply means it's reachable. Fixes to make for v1.0: Setup falls back to the QR's `ips` when `base` fails, with a short timeout and a clear error; the pairing screen shows a hint if nothing arrives in about 30 s; log dropped non-private peers (rate-limited). |
 
 **Roadmap after v1.0** (`docs/ROADMAP.md`): optional ntfy push, a relay for sending off the LAN,
 encryption out of beta, a Microsoft Store (MSIX) listing.

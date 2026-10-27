@@ -4,7 +4,7 @@ Where PhoneDrop is going. Nothing here is a promise or a date; it's the order we
 things in. Want something moved up, or to take a piece? Open a
 [Discussion](https://github.com/mynameishaheer/phonedrop/discussions) or an issue. Current state:
 [CHANGELOG.md](../CHANGELOG.md). Ground rules for every item: standard library only, no cgo, idle
-costs nothing ([CONTRIBUTING.md](../CONTRIBUTING.md)).
+costs nothing ([CONTRIBUTING.md](../.github/CONTRIBUTING.md)).
 
 ## Planned
 
@@ -21,7 +21,7 @@ costs nothing ([CONTRIBUTING.md](../CONTRIBUTING.md)).
    first.
 5. **Encryption out of beta.** Verify on real iPhones (several iOS versions) that name
    constraints on user-installed roots are enforced, then make the encrypted mode the default or
-   drop the beta label. Testers welcome; see [SECURITY.md](../SECURITY.md).
+   drop the beta label. Testers welcome; see [SECURITY.md](../.github/SECURITY.md).
 6. **Code signing** for `phonedrop.exe`, so SmartScreen stops warning.
 
 ## Good first issues

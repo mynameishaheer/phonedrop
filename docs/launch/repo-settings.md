@@ -41,7 +41,7 @@ Settings → General → Social preview → Upload an image.
 
 - Size **1280 × 640 px** (2:1), PNG or JPG, under 1 MB. Keep important content about 40 px inside
   the edges; some sites crop.
-- Suggested content: the app icon (`winres/icon.png`), the name "PhoneDrop", the one-line tagline
+- Suggested content: the app icon (`cmd/phonedrop/winres/icon.png`), the name "PhoneDrop", the one-line tagline
   ("AirDrop-style sharing between iPhone and Windows. No iPhone app."), and a simple phone → PC
   arrow. Plain background, large text; it is shown small.
 - Don't include screenshots with real file names, network names or IP addresses.
@@ -77,7 +77,7 @@ apply `bug` and `enhancement` automatically, and `CONTRIBUTING.md` links to `goo
 
 ## Before announcing
 
-- [ ] Fill in the `[INSERT CONTACT]` placeholder in `CODE_OF_CONDUCT.md`.
+- [ ] Fill in the `[INSERT CONTACT]` placeholder in `.github/CODE_OF_CONDUCT.md`.
 - [ ] Record `docs/media/demo.gif` and uncomment it in the README (see the comment there).
 - [ ] Create the good first issues from `docs/launch/good-first-issues.md`.
 - [ ] Tag a release so the "latest release" badge and install links work.

@@ -22,11 +22,11 @@ jobs:
       - name: Check formatting
         run: test -z "$(gofmt -l .)"
       - name: Vet
-        run: go vet ./... && GOOS=windows GOARCH=amd64 go vet .
+        run: go vet ./... && GOOS=windows GOARCH=amd64 go vet ./...
       - name: Test
         run: go test -race ./...
       - name: Build phonedrop.exe
-        run: ./build.sh
+        run: scripts/build.sh
       - name: Checksums
         run: sha256sum phonedrop.exe install.ps1 > SHA256SUMS.txt && cat SHA256SUMS.txt
       - name: Attest build provenance

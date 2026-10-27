@@ -60,4 +60,4 @@ Real-device testing found things no test could:
 - **Encrypted mode (beta)** relies on iOS enforcing X.509 name constraints on user-installed
   certificates. That hasn't been checked on a real iPhone yet.
 - **No independent human security review yet.** If you know your way around this, please
-  [try to break it](../SECURITY.md). Reviewers will be credited.
+  [try to break it](../.github/SECURITY.md). Reviewers will be credited.

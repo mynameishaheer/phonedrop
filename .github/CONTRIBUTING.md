@@ -19,7 +19,7 @@ By taking part you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 You need Go 1.24 or newer on any OS. You do not need Windows to work on most of the code.
 
 ```sh
-./build.sh                    # go test ./..., then cross-compiles phonedrop.exe
+scripts/build.sh              # go test ./..., then cross-compiles phonedrop.exe
 go test -race ./...           # what CI runs
 GOOS=windows go vet .         # vets the Windows-only files from Linux or macOS
 gofmt -l .                    # must print nothing
@@ -34,7 +34,7 @@ between the PC and the shortcuts, is in [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
 1. **Standard library only, no cgo.** No third-party Go modules. Windows APIs are called through
    `syscall`. This keeps the exe small and the supply chain empty. (The one external tool,
-   `go-winres`, is run by hand to regenerate the icon and version resource, see `build.sh`.)
+   `go-winres`, is run by hand to regenerate the icon and version resource, see `scripts/build.sh`.)
 2. **Idle must cost nothing.** No polling loops, no tickers while the panel is hidden, no
    background timers. Block on accepts and channels; check expiry lazily when state is touched.
 3. **Stream, don't buffer.** Received files go to disk as they arrive.

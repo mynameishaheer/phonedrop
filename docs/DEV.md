@@ -7,10 +7,10 @@ the contract, so read it first.
 
 - **Go 1.24, standard library only.** No third-party modules, no cgo. Windows APIs are called
   through `syscall` (see `win_windows.go`, `gdip_windows.go`, `netwatch_windows.go`).
-- One `package main`. Files ending `_windows.go` are Windows-only (UI, Win32, DPAPI, COM).
+- One `package main`, in `cmd/phonedrop/`. Files ending `_windows.go` are Windows-only (UI, Win32, DPAPI, COM).
   Everything else is **portable** and must build and test on Linux: `go test ./...`.
   `main_other.go` gives non-Windows builds a stub `main`.
-- Build the exe with `./build.sh` (runs tests, then `GOOS=windows` cross-compile).
+- Build the exe with `scripts/build.sh` (runs tests, then `GOOS=windows` cross-compile).
   Also check `GOOS=windows go vet .` passes.
 - Idle must cost nothing: no polling loops, no tickers while the panel is hidden. Blocking
   accepts/waits only; expiry is checked lazily when state is next touched.

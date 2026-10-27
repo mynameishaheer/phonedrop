@@ -129,7 +129,7 @@ Transfers stream to disk, so memory stays flat whatever the file size. Tested ph
 Go 1.24+ on any OS, standard library only:
 
 ```sh
-./build.sh                       # runs the tests, then cross-compiles phonedrop.exe
+scripts/build.sh                       # runs the tests, then cross-compiles phonedrop.exe
 phonedrop.exe -preview <folder>  # renders every panel state to PNGs, no windows
 ```
 
@@ -164,7 +164,7 @@ on Back Tap and on the Action Button. The cost is that the PC can't push to the 
 **Receive from PC** to collect.
 
 **Windows warns that the app is unsigned.** Yes, it isn't code-signed yet. You can inspect the
-source and build it yourself with `./build.sh`; CI builds the released exe from the tagged commit.
+source and build it yourself with `scripts/build.sh`; CI builds the released exe from the tagged commit.
 See [Verifying a download](#verifying-a-download).
 
 **Was this written by AI?** Largely, yes, with a person deciding, testing on real devices and
@@ -194,12 +194,12 @@ gh attestation verify .\phonedrop.exe --repo mynameishaheer/phonedrop
 
 ## Contributing
 
-Bug reports, ideas and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md);
+Bug reports, ideas and pull requests are welcome. Start with [CONTRIBUTING.md](.github/CONTRIBUTING.md);
 issues labelled
 [good first issue](https://github.com/mynameishaheer/phonedrop/labels/good%20first%20issue) are a
 good way in. Questions go in
 [Discussions](https://github.com/mynameishaheer/phonedrop/discussions). Security problems: see
-[SECURITY.md](SECURITY.md), not a public issue.
+[SECURITY.md](.github/SECURITY.md), not a public issue.
 
 ## Roadmap
 

@@ -3,7 +3,7 @@
 For the repo owner. Create each as a GitHub issue with the label `good first issue` (and the
 extra label named in brackets), copying the title and body. Delete this file once they exist.
 
-Every body ends with the same pointer to [CONTRIBUTING.md](../../CONTRIBUTING.md); keep it.
+Every body ends with the same pointer to [CONTRIBUTING.md](../../.github/CONTRIBUTING.md); keep it.
 
 ---
 
@@ -29,7 +29,7 @@ and Recent list show the new name.
 **Hints:** the Windows-only UI can be checked with `phonedrop.exe -preview <folder>` (works under
 Wine). Start with the store and test, which build and run on Linux.
 
-Read [CONTRIBUTING.md](../../CONTRIBUTING.md) first. Comment here to claim this.
+Read [CONTRIBUTING.md](../../.github/CONTRIBUTING.md) first. Comment here to claim this.
 
 ---
 
@@ -53,7 +53,7 @@ folder or a missing file is handled without a crash.
 
 **Constraints:** standard library only, no cgo, and no timers or polling while the panel is hidden.
 
-Read [CONTRIBUTING.md](../../CONTRIBUTING.md) first. Needs a Windows machine to test.
+Read [CONTRIBUTING.md](../../.github/CONTRIBUTING.md) first. Needs a Windows machine to test.
 
 ---
 
@@ -77,7 +77,7 @@ it on real Windows. This one needs no Go.
 **Done when:** the README states measured figures with the Windows version and PhoneDrop version
 they came from. If you find it exceeds the target, open a separate issue with what you saw.
 
-Read [CONTRIBUTING.md](../../CONTRIBUTING.md) first.
+Read [CONTRIBUTING.md](../../.github/CONTRIBUTING.md) first.
 
 ---
 
@@ -102,7 +102,7 @@ empty. See the "After importing" note in `shortcuts/README.md`.
 reads `config.json` without any manual fix. Signing needs a Mac; say in the pull request what you
 could test.
 
-Read [CONTRIBUTING.md](../../CONTRIBUTING.md) first (see "The iPhone shortcuts").
+Read [CONTRIBUTING.md](../../.github/CONTRIBUTING.md) first (see "The iPhone shortcuts").
 
 ---
 
@@ -128,7 +128,7 @@ so any OS works.
 **Constraint:** standard library only. Never read more of the file than the header the function
 already receives.
 
-Read [CONTRIBUTING.md](../../CONTRIBUTING.md) first.
+Read [CONTRIBUTING.md](../../.github/CONTRIBUTING.md) first.
 
 ---
 
@@ -153,7 +153,7 @@ Panel text, buttons and toast messages are string literals spread through `ui_wi
 `phonedrop.exe -preview`), and adding a second language means adding one table.
 
 Discuss the approach in the issue before a large change. Read
-[CONTRIBUTING.md](../../CONTRIBUTING.md) first.
+[CONTRIBUTING.md](../../.github/CONTRIBUTING.md) first.
 
 ---
 
@@ -180,7 +180,7 @@ Discuss the approach in the issue before a large change. Read
 the exe, shortcuts, Run entry and the registry key. No admin rights needed.
 
 Note `install.ps1` uses CRLF line endings (see `.gitattributes`). Needs Windows to test.
-Read [CONTRIBUTING.md](../../CONTRIBUTING.md) first.
+Read [CONTRIBUTING.md](../../.github/CONTRIBUTING.md) first.
 
 ---
 
@@ -201,4 +201,4 @@ exe's file properties. The version is the `version` constant in `settings.go`.
 
 **Done when:** the version shows in both themes and doesn't shift the existing layout.
 
-Read [CONTRIBUTING.md](../../CONTRIBUTING.md) first.
+Read [CONTRIBUTING.md](../../.github/CONTRIBUTING.md) first.

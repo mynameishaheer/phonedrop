@@ -6,6 +6,15 @@ All notable changes to PhoneDrop are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-10-27
+
+### Added
+- **Ready-made iPhone shortcuts.** All six are signed and in the repo, with one-tap download links in
+  the README and a `PhoneDrop-Shortcuts.zip` in each release. No more building them by hand.
+
+### Changed
+- Releases are published as Latest, so the README's download link works.
+
 ## [0.9.2] - 2026-10-27
 
 First published release. The app itself is unchanged from the 0.9.2 build of 24 Oct.
@@ -63,5 +72,6 @@ First published release. The app itself is unchanged from the 0.9.2 build of 24 
 - Protocol specification (`docs/PROTOCOL.md`), developer notes (`docs/DEV.md`), and CI that
   checks formatting, vets for Windows, runs the tests with the race detector and builds the exe.
 
-[Unreleased]: https://github.com/mynameishaheer/phonedrop/compare/v0.9.2...HEAD
+[Unreleased]: https://github.com/mynameishaheer/phonedrop/compare/v0.9.3...HEAD
+[0.9.3]: https://github.com/mynameishaheer/phonedrop/releases/tag/v0.9.3
 [0.9.2]: https://github.com/mynameishaheer/phonedrop/releases/tag/v0.9.2

@@ -8,7 +8,7 @@ import (
 
 const (
 	appName     = "PhoneDrop"
-	version     = "0.9.2" // reported by GET /v1/ping; keep winres/winres.json in step
+	version     = "0.9.3" // reported by GET /v1/ping; keep winres/winres.json in step
 	defaultPort = 47474
 )
 

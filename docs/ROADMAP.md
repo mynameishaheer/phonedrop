@@ -9,11 +9,10 @@ Current state: [CHANGELOG.md](../CHANGELOG.md). Ground rules for every item: sta
 | # | Item | What it means |
 |---|---|---|
 | 1 | **v1.0 release** | A tagged, CI-built release with notes, the protocol marked stable, and the idle-memory figure ([FAQ](FAQ.md#resource-use)) measured instead of targeted. |
-| 2 | **iCloud shortcut links** | One-tap install of the six shortcuts. Needs the generated shortcuts signed on a Mac and shared from the Shortcuts app. Then the README's "iCloud links coming with v1.0" becomes real links. |
-| 3 | **Push notifications via ntfy** (optional) | Shortcuts can't wait in the background, so today the phone must run **Receive from PC**. With an opt-in [ntfy](https://ntfy.sh) topic the PC could ping the phone when something is waiting. Off by default; no polling. |
-| 4 | **Relay for off-LAN sending** | Send when the phone and PC aren't on the same network. The relay would see only end-to-end encrypted blobs. Biggest item; needs a design discussion first. |
-| 5 | **Encryption out of beta** | Verify on real iPhones (several iOS versions) that name constraints on user-installed roots are enforced, then make encrypted mode the default or drop the beta label. Testers welcome: [SECURITY-MODEL.md](SECURITY-MODEL.md). |
-| 6 | **Code signing** | Sign the exe, so SmartScreen stops warning. |
+| 2 | **Push notifications via ntfy** (optional) | Shortcuts can't wait in the background, so today the phone must run **Receive from PC**. With an opt-in [ntfy](https://ntfy.sh) topic the PC could ping the phone when something is waiting. Off by default; no polling. |
+| 3 | **Relay for off-LAN sending** | Send when the phone and PC aren't on the same network. The relay would see only end-to-end encrypted blobs. Biggest item; needs a design discussion first. |
+| 4 | **Encryption out of beta** | Verify on real iPhones (several iOS versions) that name constraints on user-installed roots are enforced, then make encrypted mode the default or drop the beta label. Testers welcome: [SECURITY-MODEL.md](SECURITY-MODEL.md). |
+| 5 | **Code signing** | Sign the exe, so SmartScreen stops warning. |
 
 ## Good first issues
 

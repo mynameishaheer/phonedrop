@@ -1,6 +1,6 @@
 # Building the iPhone shortcuts by hand
 
-**Easiest:** use the one-tap iCloud links (coming with v1.0) or the signed files ([shortcuts/README.md](../shortcuts/README.md)).
+**Easiest:** tap the ready-made links in the [README](../README.md#2-on-the-iphone) instead. This page is the manual fallback.
 This page is the manual fallback. It takes about 20 minutes, once, in Apple's **Shortcuts** app.
 Afterwards you can share each shortcut as an iCloud link, so other people install it with one tap.
 

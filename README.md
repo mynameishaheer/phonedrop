@@ -59,8 +59,15 @@ Prefer no installer? Each release also has the plain `phonedrop.exe` and `instal
 
 ### 2. On the iPhone
 
-1. Get the shortcuts. One-tap iCloud links are coming with v1.0. Until then, build them with
-   [docs/SHORTCUTS.md](docs/SHORTCUTS.md) (about 20 minutes, once) or sign the generated ones on a Mac ([shortcuts/README.md](shortcuts/README.md)).
+1. On the iPhone, open this page in Safari and tap each link, then **Add Shortcut**. Add **PhoneDrop Sign** first:
+   - [PhoneDrop Sign](https://github.com/mynameishaheer/phonedrop/raw/main/shortcuts/signed/PhoneDrop%20Sign.shortcut)
+   - [PhoneDrop Setup](https://github.com/mynameishaheer/phonedrop/raw/main/shortcuts/signed/PhoneDrop%20Setup.shortcut)
+   - [Send to PC](https://github.com/mynameishaheer/phonedrop/raw/main/shortcuts/signed/Send%20to%20PC.shortcut)
+   - [Send Text to PC](https://github.com/mynameishaheer/phonedrop/raw/main/shortcuts/signed/Send%20Text%20to%20PC.shortcut)
+   - [Send Latest Screenshot](https://github.com/mynameishaheer/phonedrop/raw/main/shortcuts/signed/Send%20Latest%20Screenshot.shortcut)
+   - [Receive from PC](https://github.com/mynameishaheer/phonedrop/raw/main/shortcuts/signed/Receive%20from%20PC.shortcut)
+
+   They're also in each release as `PhoneDrop-Shortcuts.zip`. Prefer to build them yourself? See [docs/SHORTCUTS.md](docs/SHORTCUTS.md).
 2. On the PC, click **Pair**. On the iPhone, run **PhoneDrop Setup** and scan the code.
 3. On the PC, click **Allow**.
 
@@ -151,7 +158,6 @@ Questions go in [Discussions](https://github.com/mynameishaheer/phonedrop/discus
 Details in [docs/ROADMAP.md](docs/ROADMAP.md); changes so far in [CHANGELOG.md](CHANGELOG.md).
 
 - **v1.0:** first stable release.
-- **iCloud shortcut links:** one-tap install of all six shortcuts.
 - **Optional push notifications** via [ntfy](https://ntfy.sh), so the phone knows something is waiting.
 - **Relay for off-LAN sending**, and **encryption out of beta** once verified on real iPhones.
 

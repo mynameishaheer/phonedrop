@@ -1,7 +1,7 @@
 {
   "RT_GROUP_ICON": { "APP": { "0000": "icon.png" } },
   "RT_MANIFEST": { "#1": { "0409": {
-    "identity": { "name": "PhoneDrop", "version": "0.9.2.0" },
+    "identity": { "name": "PhoneDrop", "version": "0.9.3.0" },
     "description": "PhoneDrop",
     "minimum-os": "win10",
     "execution-level": "as invoker",
@@ -10,8 +10,8 @@
   } } },
   "RT_VERSION": {
     "#1": { "0000": {
-      "fixed": { "file_version": "0.9.2.0", "product_version": "0.9.2.0" },
-      "info": { "0409": { "FileDescription": "PhoneDrop", "ProductName": "PhoneDrop", "ProductVersion": "0.9.2", "LegalCopyright": "MIT License" } }
+      "fixed": { "file_version": "0.9.3.0", "product_version": "0.9.3.0" },
+      "info": { "0409": { "FileDescription": "PhoneDrop", "ProductName": "PhoneDrop", "ProductVersion": "0.9.3", "LegalCopyright": "MIT License" } }
     } }
   }
 }

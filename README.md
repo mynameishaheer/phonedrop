@@ -4,12 +4,10 @@
 <p align="center"><sub>An independent project, not affiliated with or endorsed by Apple or Microsoft. AirDrop and iPhone are trademarks of Apple Inc.</sub></p>
 
 <p align="center">
-
-[![build](https://github.com/mynameishaheer/phonedrop/actions/workflows/build.yml/badge.svg)](https://github.com/mynameishaheer/phonedrop/actions/workflows/build.yml)
-[![License: MIT](https://img.shields.io/github/license/mynameishaheer/phonedrop)](LICENSE)
-[![Latest release](https://img.shields.io/github/v/release/mynameishaheer/phonedrop?include_prereleases&sort=semver)](https://github.com/mynameishaheer/phonedrop/releases/latest)
-[![Go version](https://img.shields.io/github/go-mod/go-version/mynameishaheer/phonedrop)](go.mod)
-
+  <a href="https://github.com/mynameishaheer/phonedrop/actions/workflows/build.yml"><img src="https://github.com/mynameishaheer/phonedrop/actions/workflows/build.yml/badge.svg" alt="build"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/mynameishaheer/phonedrop" alt="License: MIT"></a>
+  <a href="https://github.com/mynameishaheer/phonedrop/releases/latest"><img src="https://img.shields.io/github/v/release/mynameishaheer/phonedrop?include_prereleases&sort=semver" alt="Latest release"></a>
+  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/mynameishaheer/phonedrop" alt="Go version"></a>
 </p>
 
 <!--
@@ -23,8 +21,10 @@
 -->
 
 <p align="center">
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/media/panel-ready-dark.png"><img src="docs/media/panel-ready.png" width="330" alt="The PhoneDrop tray panel saying Ready to receive, with a Pair button"></picture>
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/media/toast-file-dark.png"><img src="docs/media/toast-file.png" width="330" alt="A Windows notification: IMG_2041.HEIC received from an iPhone, with Open and Show in folder buttons"></picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/hero-dark.png">
+    <img src="docs/media/hero.png" width="760" alt="The PhoneDrop tray panel saying Ready to receive, next to a Windows notification for a photo received from an iPhone with Open and Show in folder buttons">
+  </picture>
 </p>
 
 ## What it does

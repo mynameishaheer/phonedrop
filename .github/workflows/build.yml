@@ -125,7 +125,13 @@ jobs:
         run: |
           mkdir rel
           cp out/installer/PhoneDrop-Setup.exe out/exe/phonedrop.exe out/exe/scripts/install.ps1 rel/
-          cd rel && sha256sum PhoneDrop-Setup.exe phonedrop.exe install.ps1 > SHA256SUMS.txt && cat SHA256SUMS.txt
+          # Signed shortcuts are committed by the maintainer (signing needs a Mac signed in to iCloud).
+          # Zipped, because GitHub turns spaces in asset names into dots and iOS names a shortcut after
+          # its file: "PhoneDrop Sign" must keep its exact name, the others call it by name.
+          if compgen -G "shortcuts/signed/*.shortcut" >/dev/null; then
+            (cd shortcuts/signed && zip -q -X "$GITHUB_WORKSPACE/rel/PhoneDrop-Shortcuts.zip" *.shortcut)
+          fi
+          cd rel && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
       - uses: actions/attest-build-provenance@v2
         if: steps.plan.outputs.skip != 'true'
         with:

@@ -49,3 +49,15 @@ python3 -I build.py --xml /tmp/pd-xml   # also writes readable XML copies
 ```
 
 The output is deterministic, so a rebuild without changes gives identical files.
+
+## Publishing signed files (maintainer)
+
+iOS only imports signed shortcuts, and CI can't sign (it needs a Mac signed in to iCloud). So after
+any change to `build.py`:
+
+1. On a Mac: `python3 -I build.py && ./sign-all.sh`.
+2. Commit `signed/*.shortcut` and push. Check that all six signed; Apple's server sometimes fails, and
+   re-running retries.
+3. The next release then includes `PhoneDrop-Shortcuts.zip`, and the README's direct links
+   (`https://github.com/mynameishaheer/phonedrop/raw/main/shortcuts/signed/<name>.shortcut`) serve
+   the new files.
